@@ -25,12 +25,28 @@
 //
 // i.e. gain moves 1:1 with overshoot once fully above the knee (there is no
 // separate "ratio" parameter in the M1 spec - see docs/design-brief.md),
-// smoothly ramped in over a 6 dB knee width around Threshold, and hard
+// smoothly ramped in over a knee width derived from Range (v0.2.0, see
+// computeKneeWidthDb() below - a flat 6 dB constant pre-v0.2.0), and hard
 // capped at the user's Range so it can never exceed the configured depth.
 // Negative Range cuts as the signal gets louder (the classic de-esser/
 // resonance-tamer use case); positive Range boosts as it gets louder
 // (upward "duck-in" expansion). Range == 0 disables the dynamic term
 // entirely (a pure static EQ band).
+//
+// v0.2.0 (docs/design-brief.md §2/§3) adds two opt-in, per-band booleans,
+// both off by default (exact v0.1.0 behaviour reproduced when off):
+//   - `autoRelease`: forwarded straight to Detector::setAutoRelease() - see
+//     that class's docs for the full program-dependent-release mechanism.
+//   - `gainQ`: widens (reduces) the *main filter's own* effective Q
+//     proportionally to how far the band's current dynamic gain sits toward
+//     its Range ceiling, following Sonnox Oxford Dynamic EQ's documented
+//     "Q reduces with gain" analog-style softening. Deliberately scoped to
+//     the main filter's coefficients only (computeMainFilterQ() below) and
+//     NOT applied to the Detector's own bandpass Q (effectiveQ(), used for
+//     sidechain matching) - coupling the detector's own selectivity to the
+//     gain it itself produces would be a feedback loop (wider detector
+//     bandpass -> different measured level -> different gain -> different
+//     bandpass...); only the audible filter shape softens.
 //
 // Coefficient updates (both the main filter's and the Detector's bandpass)
 // are real-time safe (see RealtimeCoefficients.h) and are only ever done
@@ -86,6 +102,8 @@ public:
     void setAttackMs (float newAttackMs) noexcept { detector.setAttackMs (newAttackMs); }
     void setReleaseMs (float newReleaseMs) noexcept { detector.setReleaseMs (newReleaseMs); }
     void setListen (bool shouldListen) noexcept { listen = shouldListen; }
+    void setAutoRelease (bool shouldAutoRelease) noexcept { detector.setAutoRelease (shouldAutoRelease); }
+    void setGainQ (bool shouldCoupleGainToQ) noexcept { gainQEnabled = shouldCoupleGainToQ; }
 
     bool isListening() const noexcept { return listen; }
     bool isOn() const noexcept { return on; }
@@ -106,18 +124,43 @@ private:
     // matched bandpass (see Detector.h/.cpp usage below).
     static constexpr float fixedShelfQ = 0.70710678f;
 
-    // Soft-knee width in dB, centred on Threshold - see class comment.
-    static constexpr float kneeWidthDb = 6.0f;
-
     static constexpr double smoothingTimeSeconds = 0.05;
+
+    // Knee-width bounds (v0.2.0, docs/design-brief.md §3): floored at 2 dB
+    // (still audibly soft even for the smallest engaged Range) and clamped
+    // at 10 dB (deliberately unreachable headroom given this plugin's own
+    // +-12 dB Range ceiling - 12 * 0.5 = 6 dB is the real, reachable
+    // maximum, matching v0.1.0's old flat 6 dB constant bit-for-bit in
+    // shape at Range = +-12 dB - see test guarantee #2).
+    static constexpr float kneeWidthFloorDb = 2.0f;
+    static constexpr float kneeWidthCeilingDb = 10.0f;
+    static constexpr float kneeWidthRangeSlope = 0.5f;
+
+    // Gain/Q coupling bounds (v0.2.0, docs/design-brief.md §2/§3): at full
+    // dynamic gain (|dynamicGainDb| == |Range|), the main filter's Q is
+    // multiplied by this floor - i.e. widened to ~2.5x its nominal
+    // bandwidth - a deliberately non-trivial, easily measurable softening
+    // (test guarantee #4), not a subtle tweak.
+    static constexpr float gainQMinMultiplier = 0.4f;
 
     bool isEffectivelyShelf() const noexcept { return shelfDirection != ShelfDirection::none && shelfSelected; }
     float effectiveQ() const noexcept { return isEffectivelyShelf() ? fixedShelfQ : q; }
 
-    // Soft-knee gain-computer overshoot (see class comment), always >= 0.
-    static float softKneeOvershoot (float overshootDb) noexcept;
+    // The Q actually baked into the main filter's coefficients: effectiveQ()
+    // above, optionally narrowed toward gainQMinMultiplier as
+    // `dynamicGainDbAbs` approaches |Range| - see class comment's "gainQ"
+    // paragraph for why this is scoped away from the Detector's own
+    // bandpass Q.
+    float computeMainFilterQ (float dynamicGainDbAbs) const noexcept;
 
-    void updateFilterCoefficients (float appliedGainDb) noexcept;
+    // Knee width in dB for the current Range setting - see class comment
+    // and kneeWidthFloorDb/kneeWidthCeilingDb/kneeWidthRangeSlope above.
+    float computeKneeWidthDb() const noexcept;
+
+    // Soft-knee gain-computer overshoot (see class comment), always >= 0.
+    static float softKneeOvershoot (float overshootDb, float kneeWidthDb) noexcept;
+
+    void updateFilterCoefficients (float appliedGainDb, float mainFilterQ) noexcept;
 
     ShelfDirection shelfDirection;
 
@@ -131,6 +174,7 @@ private:
     bool on = false;
     bool shelfSelected = false;
     bool listen = false;
+    bool gainQEnabled = false;
 
     float frequencyHz = 1000.0f;
     float q = 1.0f;

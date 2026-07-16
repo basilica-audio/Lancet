@@ -1,0 +1,15 @@
+{
+    "format": "basilica-preset-1",
+    "plugin": "com.yvesvogl.lancet",
+    "pluginVersion": "0.2.0",
+    "name": "Slow Tonal Ride",
+    "category": "Master",
+    "parameters": {
+        "b2_on": true,
+        "b2_q": 0.5,
+        "b2_thresh": -35.0,
+        "b2_range": -5.0,
+        "b2_attack": 350.0,
+        "b2_release": 800.0
+    }
+}

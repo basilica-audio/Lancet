@@ -1,0 +1,23 @@
+{
+    "format": "basilica-preset-1",
+    "plugin": "com.yvesvogl.lancet",
+    "pluginVersion": "0.2.0",
+    "name": "De-Ess Stack",
+    "category": "Vocals",
+    "parameters": {
+        "b5_on": true,
+        "b5_freq": 6500.0,
+        "b5_q": 2.0,
+        "b5_thresh": -24.0,
+        "b5_range": -8.0,
+        "b5_attack": 0.5,
+        "b5_release": 60.0,
+        "b5_autoRelease": true,
+        "b6_on": true,
+        "b6_type": 1,
+        "b6_freq": 9000.0,
+        "b6_q": 0.5,
+        "b6_range": 1.5,
+        "b6_attack": 5.0
+    }
+}

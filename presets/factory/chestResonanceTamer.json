@@ -1,0 +1,16 @@
+{
+    "format": "basilica-preset-1",
+    "plugin": "com.yvesvogl.lancet",
+    "pluginVersion": "0.2.0",
+    "name": "Chest Resonance Tamer",
+    "category": "Vocals",
+    "parameters": {
+        "b1_on": true,
+        "b1_type": 1,
+        "b1_freq": 220.0,
+        "b1_thresh": -28.0,
+        "b1_range": -5.0,
+        "b1_attack": 20.0,
+        "b1_release": 180.0
+    }
+}

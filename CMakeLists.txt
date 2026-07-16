@@ -10,7 +10,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS deployment ta
 # here at the top level avoids it being enabled implicitly deeper inside
 # JUCE's CMake helpers, which has been observed to break Ninja's generate
 # step (missing CMAKE_C_COMPILE_OBJECT rule variable).
-project(Lancet VERSION 0.1.0 LANGUAGES C CXX)
+project(Lancet VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -52,6 +52,30 @@ juce_add_plugin(Lancet
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
+    ICON_BIG "docs/assets/icon.png"
+)
+
+# ==============================================================================
+# Embedded assets: M2 preset system factory presets (presets/factory/*.json)
+# and the M2 i18n frame's German translation (resources/i18n/de.txt). See
+# src/presets/PresetManager.h and src/presets/Localisation.h - both consume
+# these purely via BinaryData:: symbols passed in from PluginProcessor.cpp/
+# PluginEditor.cpp, never by including BinaryData.h themselves, so they stay
+# portable to sibling plugins (see basilica-audio/nave's
+# docs/preset-system-notes.md).
+# ==============================================================================
+
+juce_add_binary_data(LancetBinaryData SOURCES
+    presets/factory/default.json
+    presets/factory/gentleGlue.json
+    presets/factory/deEssStack.json
+    presets/factory/transientSnareCrack.json
+    presets/factory/mixBussSettle.json
+    presets/factory/slowTonalRide.json
+    presets/factory/chestResonanceTamer.json
+    presets/factory/fastRecoveryDemo.json
+    presets/factory/listenCheck.json
+    resources/i18n/de.txt
 )
 
 # ==============================================================================
@@ -86,9 +110,11 @@ target_compile_definitions(SharedCode INTERFACE
 target_link_libraries(SharedCode INTERFACE
     juce::juce_audio_utils
     juce::juce_dsp
+    juce::juce_gui_basics
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
+    LancetBinaryData
 )
 
 target_link_libraries(Lancet PRIVATE SharedCode)

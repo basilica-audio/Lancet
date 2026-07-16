@@ -2,6 +2,9 @@
 #include "PluginEditor.h"
 #include "params/ParameterIds.h"
 #include "params/ParameterLayout.h"
+#include "presets/PresetManager.h"
+
+#include <BinaryData.h>
 
 namespace
 {
@@ -20,22 +23,74 @@ namespace
         const char* attack;
         const char* release;
         const char* listen;
+        const char* autoRelease;
+        const char* gainQ;
     };
 
     constexpr std::array<BandIdSet, LancetEngine::numBands> bandIds { {
         { ParamIDs::b1On, ParamIDs::b1Type, ParamIDs::b1Freq, ParamIDs::b1Q, ParamIDs::b1Gain,
-          ParamIDs::b1Range, ParamIDs::b1Threshold, ParamIDs::b1Attack, ParamIDs::b1Release, ParamIDs::b1Listen },
+          ParamIDs::b1Range, ParamIDs::b1Threshold, ParamIDs::b1Attack, ParamIDs::b1Release, ParamIDs::b1Listen,
+          ParamIDs::b1AutoRelease, ParamIDs::b1GainQ },
         { ParamIDs::b2On, nullptr, ParamIDs::b2Freq, ParamIDs::b2Q, ParamIDs::b2Gain,
-          ParamIDs::b2Range, ParamIDs::b2Threshold, ParamIDs::b2Attack, ParamIDs::b2Release, ParamIDs::b2Listen },
+          ParamIDs::b2Range, ParamIDs::b2Threshold, ParamIDs::b2Attack, ParamIDs::b2Release, ParamIDs::b2Listen,
+          ParamIDs::b2AutoRelease, ParamIDs::b2GainQ },
         { ParamIDs::b3On, nullptr, ParamIDs::b3Freq, ParamIDs::b3Q, ParamIDs::b3Gain,
-          ParamIDs::b3Range, ParamIDs::b3Threshold, ParamIDs::b3Attack, ParamIDs::b3Release, ParamIDs::b3Listen },
+          ParamIDs::b3Range, ParamIDs::b3Threshold, ParamIDs::b3Attack, ParamIDs::b3Release, ParamIDs::b3Listen,
+          ParamIDs::b3AutoRelease, ParamIDs::b3GainQ },
         { ParamIDs::b4On, nullptr, ParamIDs::b4Freq, ParamIDs::b4Q, ParamIDs::b4Gain,
-          ParamIDs::b4Range, ParamIDs::b4Threshold, ParamIDs::b4Attack, ParamIDs::b4Release, ParamIDs::b4Listen },
+          ParamIDs::b4Range, ParamIDs::b4Threshold, ParamIDs::b4Attack, ParamIDs::b4Release, ParamIDs::b4Listen,
+          ParamIDs::b4AutoRelease, ParamIDs::b4GainQ },
         { ParamIDs::b5On, nullptr, ParamIDs::b5Freq, ParamIDs::b5Q, ParamIDs::b5Gain,
-          ParamIDs::b5Range, ParamIDs::b5Threshold, ParamIDs::b5Attack, ParamIDs::b5Release, ParamIDs::b5Listen },
+          ParamIDs::b5Range, ParamIDs::b5Threshold, ParamIDs::b5Attack, ParamIDs::b5Release, ParamIDs::b5Listen,
+          ParamIDs::b5AutoRelease, ParamIDs::b5GainQ },
         { ParamIDs::b6On, ParamIDs::b6Type, ParamIDs::b6Freq, ParamIDs::b6Q, ParamIDs::b6Gain,
-          ParamIDs::b6Range, ParamIDs::b6Threshold, ParamIDs::b6Attack, ParamIDs::b6Release, ParamIDs::b6Listen },
+          ParamIDs::b6Range, ParamIDs::b6Threshold, ParamIDs::b6Attack, ParamIDs::b6Release, ParamIDs::b6Listen,
+          ParamIDs::b6AutoRelease, ParamIDs::b6GainQ },
     } };
+
+    // The small, Lancet-specific config surface PresetManager needs (see
+    // src/presets/PresetManager.h's class docs) - everything else about the
+    // preset system is fully generic and portable across the suite (see
+    // basilica-audio/nave's docs/preset-system-notes.md, the M2 pilot this
+    // was copied from).
+    basilica::presets::PresetManagerConfig makePresetManagerConfig()
+    {
+        // JucePlugin_CFBundleIdentifier expands to a raw (unquoted) token
+        // sequence, not a string literal - JUCE_STRINGIFY() is the
+        // documented way to turn it into one. Always "com.yvesvogl.lancet"
+        // here (BUNDLE_ID in CMakeLists.txt), matching the "plugin" field
+        // baked into every presets/factory/*.json file.
+        basilica::presets::PresetManagerConfig config;
+        config.pluginId = JUCE_STRINGIFY (JucePlugin_CFBundleIdentifier);
+        config.pluginName = JucePlugin_Name;
+        config.manufacturerName = "Yves Vogl";
+        config.pluginVersion = JucePlugin_VersionString;
+        // userPresetsDirectoryOverrideForTests intentionally left
+        // default-constructed (empty) - production instances always use the
+        // real platform-standard preset location (see PresetManager.h).
+        return config;
+    }
+
+    // BinaryData symbol names are derived from the presets/factory/*.json
+    // file names passed to juce_add_binary_data() in CMakeLists.txt (dots
+    // become underscores) - this list must stay in sync with that SOURCES
+    // list. Order here only affects factory-preset iteration order before
+    // getAllPresets() re-sorts alphabetically, so it isn't otherwise
+    // significant.
+    std::vector<basilica::presets::FactoryPresetAsset> makeFactoryPresetAssets()
+    {
+        return {
+            { BinaryData::default_json, BinaryData::default_jsonSize },
+            { BinaryData::gentleGlue_json, BinaryData::gentleGlue_jsonSize },
+            { BinaryData::deEssStack_json, BinaryData::deEssStack_jsonSize },
+            { BinaryData::transientSnareCrack_json, BinaryData::transientSnareCrack_jsonSize },
+            { BinaryData::mixBussSettle_json, BinaryData::mixBussSettle_jsonSize },
+            { BinaryData::slowTonalRide_json, BinaryData::slowTonalRide_jsonSize },
+            { BinaryData::chestResonanceTamer_json, BinaryData::chestResonanceTamer_jsonSize },
+            { BinaryData::fastRecoveryDemo_json, BinaryData::fastRecoveryDemo_jsonSize },
+            { BinaryData::listenCheck_json, BinaryData::listenCheck_jsonSize },
+        };
+    }
 }
 
 //==============================================================================
@@ -43,7 +98,8 @@ LancetAudioProcessor::LancetAudioProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput ("Input", juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
-      apvts (*this, nullptr, "PARAMETERS", createParameterLayout())
+      apvts (*this, nullptr, "PARAMETERS", createParameterLayout()),
+      presetManager (apvts, makePresetManagerConfig(), makeFactoryPresetAssets())
 {
     for (int i = 0; i < LancetEngine::numBands; ++i)
     {
@@ -60,6 +116,8 @@ LancetAudioProcessor::LancetAudioProcessor()
         params.attack = apvts.getRawParameterValue (ids.attack);
         params.release = apvts.getRawParameterValue (ids.release);
         params.listen = apvts.getRawParameterValue (ids.listen);
+        params.autoRelease = apvts.getRawParameterValue (ids.autoRelease);
+        params.gainQ = apvts.getRawParameterValue (ids.gainQ);
 
         jassert (params.on != nullptr);
         jassert (ids.type == nullptr || params.type != nullptr);
@@ -71,6 +129,8 @@ LancetAudioProcessor::LancetAudioProcessor()
         jassert (params.attack != nullptr);
         jassert (params.release != nullptr);
         jassert (params.listen != nullptr);
+        jassert (params.autoRelease != nullptr);
+        jassert (params.gainQ != nullptr);
     }
 
     inTrimDb = apvts.getRawParameterValue (ParamIDs::inTrim);
@@ -80,6 +140,11 @@ LancetAudioProcessor::LancetAudioProcessor()
     jassert (inTrimDb != nullptr);
     jassert (outTrimDb != nullptr);
     jassert (mixPercent != nullptr);
+
+    // M2 default resolution: user "Default" preset > factory "Default"
+    // preset > the ParameterLayout defaults apvts was just constructed
+    // with above (see PresetManager::applyStartupDefault()'s docs).
+    presetManager.applyStartupDefault();
 }
 
 LancetAudioProcessor::~LancetAudioProcessor() = default;
@@ -159,6 +224,8 @@ void LancetAudioProcessor::pushParametersToEngine()
         engine.setBandAttackMs (i, params.attack->load (std::memory_order_relaxed));
         engine.setBandReleaseMs (i, params.release->load (std::memory_order_relaxed));
         engine.setBandListen (i, params.listen->load (std::memory_order_relaxed) > 0.5f);
+        engine.setBandAutoRelease (i, params.autoRelease->load (std::memory_order_relaxed) > 0.5f);
+        engine.setBandGainQ (i, params.gainQ->load (std::memory_order_relaxed) > 0.5f);
     }
 
     engine.setInputTrimDb (inTrimDb->load (std::memory_order_relaxed));

@@ -118,6 +118,18 @@ void LancetEngine::setBandListen (int bandIndex, bool listen) noexcept
     bands[static_cast<size_t> (bandIndex)]->setListen (listen);
 }
 
+void LancetEngine::setBandAutoRelease (int bandIndex, bool autoRelease) noexcept
+{
+    jassert (bandIndex >= 0 && bandIndex < numBands);
+    bands[static_cast<size_t> (bandIndex)]->setAutoRelease (autoRelease);
+}
+
+void LancetEngine::setBandGainQ (int bandIndex, bool gainQ) noexcept
+{
+    jassert (bandIndex >= 0 && bandIndex < numBands);
+    bands[static_cast<size_t> (bandIndex)]->setGainQ (gainQ);
+}
+
 void LancetEngine::setInputTrimDb (float newTrimDb) noexcept
 {
     lastInputTrimDb = newTrimDb;

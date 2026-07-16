@@ -4,6 +4,7 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include "dsp/LancetEngine.h"
+#include "presets/PresetManager.h"
 
 #include <array>
 
@@ -52,6 +53,14 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
 
+    // M2 preset system (.scaffold/specs/preset-system-m2.md,
+    // src/presets/PresetManager.h). Constructed after apvts (its
+    // constructor registers APVTS parameter listeners) and public so
+    // LancetAudioProcessorEditor's PresetBar can talk to it directly - the
+    // same "processor owns it, editor references it" pattern apvts itself
+    // already uses.
+    basilica::presets::PresetManager presetManager;
+
 private:
     LancetEngine engine;
 
@@ -72,6 +81,8 @@ private:
         std::atomic<float>* attack = nullptr;
         std::atomic<float>* release = nullptr;
         std::atomic<float>* listen = nullptr;
+        std::atomic<float>* autoRelease = nullptr;
+        std::atomic<float>* gainQ = nullptr;
     };
 
     std::array<BandParams, LancetEngine::numBands> bandParams;

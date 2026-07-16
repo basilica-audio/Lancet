@@ -74,6 +74,8 @@ public:
     void setBandAttackMs (int bandIndex, float attackMs) noexcept;
     void setBandReleaseMs (int bandIndex, float releaseMs) noexcept;
     void setBandListen (int bandIndex, bool listen) noexcept;
+    void setBandAutoRelease (int bandIndex, bool autoRelease) noexcept;
+    void setBandGainQ (int bandIndex, bool gainQ) noexcept;
 
     // Global trim/mix.
     void setInputTrimDb (float newTrimDb) noexcept;

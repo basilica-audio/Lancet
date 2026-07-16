@@ -74,6 +74,80 @@ dynamicGainDb = dynamicMagnitudeDb * sign(Range)
 
 There is no separate "ratio" parameter in the M1 spec (see `docs/design-brief.md`'s parameter table): once fully above the knee, gain moves 1:1 with overshoot until it hits the user's `Range`, which acts as a hard ceiling on the dynamic depth - the classic "how far can this move" control, with the knee providing a smooth ramp-in around Threshold rather than a hard switch. `Range == 0` disables the dynamic term entirely (a pure static band) - the Detector still runs (for continuity - see below), but `dynamicGainDb` is forced to `0.0f` rather than merely "small".
 
+### v0.2.0: knee width derived from Range
+
+The `knee` above was a flat 6 dB constant pre-v0.2.0. It is now
+`DynamicBand::computeKneeWidthDb()`: `clamp(|rangeDb| * 0.5, 2, 10)` dB -
+see `docs/design-brief.md` §3 for the sourced rationale (TDR Nova's
+documented ratio-coupled-knee principle) and honesty notes on the formula
+itself being this brief's own invention, calibrated so the old fixed 6 dB
+is reproduced exactly at Range = ±12 dB. `tests/KneeWidthTests.cpp`
+measures the actual gain-vs-overshoot curve (not just the formula) at three
+Range values via a steady-state RMS-ratio technique, first calibrating out
+the Detector's own small, real, and otherwise-expected peak-detector
+insertion loss (see `tests/DetectorTests.cpp`'s own tolerance on this) so
+the measurement compares against the gain computer's true internal
+overshoot rather than the raw input signal's nominal dBFS.
+
+### v0.2.0: gain/Q coupling
+
+`bN_gainQ` (opt-in, off by default) widens the *main filter's* own
+effective Q as the band's *dynamic* gain approaches Range -
+`DynamicBand::computeMainFilterQ()`: `baseQ * lerp(1.0, gainQMinMultiplier=0.4, |dynamicGainDb| / |Range|)`,
+evaluated fresh every sub-block from the *instantaneous* (pre-smoothing)
+dynamic gain magnitude. Deliberately scoped to the main filter's own
+coefficients only - the Detector's own bandpass Q (`effectiveQ()`, used for
+sidechain matching) is never touched by this, since coupling the detector's
+own selectivity to the gain it itself produces would be a feedback loop
+(wider detector bandpass → different measured level → different gain →
+different bandpass...). `tests/GainQCouplingTests.cpp` measures the band's
+actual -3 dB-equivalent bandwidth in near-zero vs. near-full dynamic-gain
+states directly at the `DynamicBand` level, using its `preChainBlock`/
+`mainSubBlock` arguments' independence to feed a locked trigger tone (pins
+the dynamic gain/Q at a steady value) separately from a swept probe tone
+(measures the actual filter response) - routing both through the full
+`LancetEngine` instead would confound the two, since the detector would
+react to whatever frequency the probe itself happened to be at.
+
+### v0.2.0: program-dependent auto-release
+
+`bN_autoRelease` (opt-in, off by default) is implemented entirely inside
+`Detector` (not `DynamicBand`), via a second, always-fast-release "fast
+reference envelope" (`fastEnvelopeLinear`) that tracks the same rectified
+signal as the main envelope, with the *same* Attack coefficient but a
+*fixed* release tied to the plugin's own Release floor (5 ms), independent
+of the user's own Release setting. Once per sub-block, that fast envelope's
+own recent dB fall rate is converted to an implied one-pole time constant
+(`8.6859 / fallRateDbPerSecond`, the standard dB/neper relationship),
+clamped to `[Release floor, user Release-ms]`, and used as a second,
+auto-derived release coefficient for a separate output envelope that feeds
+the gain computer only when the toggle is on.
+
+The key design decision - and the one place an earlier implementation
+attempt got it wrong - is *which* envelope supplies the "recent fall rate"
+measurement. Deriving it from the *main* (possibly very slow, e.g. a
+musical 500 ms Release) envelope instead doesn't work: a slow envelope is,
+by construction, a low-pass-filtered view of the input that is itself
+rate-limited to roughly its own release time constant, so measuring "how
+fast is the slow envelope falling" mostly just measures the slow envelope's
+own coefficient back at itself, almost regardless of how fast the true
+underlying signal is actually moving - an early version of this class made
+exactly that mistake, and its output was measurably identical whether
+auto-release was on or off. The dedicated fast reference envelope avoids
+that self-reference entirely.
+
+`tests/AutoReleaseDetectorTests.cpp` proves this directly at the `Detector`
+level (isolated from `DynamicBand`'s own separate gain-smoothing layer);
+`tests/AutoReleaseTests.cpp` proves it end-to-end through `LancetEngine`,
+comparing two genuinely-decaying signals at different natural decay rates
+(15 ms vs. 200 ms tau) rather than an abrupt full-scale step - an abrupt
+step registers a *larger* instantaneous fall-rate spike on the fast
+envelope than a smooth decay does, so it would (correctly, if
+counter-intuitively at first) settle *faster* under auto-release than a
+gently-decaying transient does; comparing two different decay rates instead
+isolates "how much natural decay information is in the signal" as the only
+variable, matching guarantee #3's intent.
+
 ## The 32-sample sub-block coefficient update, and zipper guard
 
 Per `docs/design-brief.md`: "Coefficient update per 32-sample sub-block with smoothed gain (no zipper)." `LancetEngine::process()` chunks a full block into `<= 32`-sample sub-blocks and calls each `DynamicBand::processSubBlock()` once per chunk. Within that call:

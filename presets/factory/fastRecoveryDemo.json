@@ -1,0 +1,15 @@
+{
+    "format": "basilica-preset-1",
+    "plugin": "com.yvesvogl.lancet",
+    "pluginVersion": "0.2.0",
+    "name": "Fast-Recovery Demo",
+    "category": "FX",
+    "parameters": {
+        "b4_on": true,
+        "b4_thresh": -25.0,
+        "b4_range": -8.0,
+        "b4_attack": 3.0,
+        "b4_release": 300.0,
+        "b4_autoRelease": true
+    }
+}

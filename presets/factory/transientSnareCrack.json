@@ -1,0 +1,16 @@
+{
+    "format": "basilica-preset-1",
+    "plugin": "com.yvesvogl.lancet",
+    "pluginVersion": "0.2.0",
+    "name": "Transient Snare Crack",
+    "category": "Drums",
+    "parameters": {
+        "b3_on": true,
+        "b3_freq": 3000.0,
+        "b3_thresh": -24.0,
+        "b3_range": 6.0,
+        "b3_attack": 0.1,
+        "b3_release": 40.0,
+        "b3_autoRelease": true
+    }
+}

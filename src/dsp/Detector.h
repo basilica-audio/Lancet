@@ -56,6 +56,50 @@ public:
     void setAttackMs (float attackMs) noexcept;
     void setReleaseMs (float releaseMs) noexcept;
 
+    // Program-dependent auto-release (v0.2.0, docs/design-brief.md §2/§3).
+    // Off by default - when off, processSubBlock() below runs the exact
+    // same floating-point operations on `envelopeLinear`/`lastLevelDb` as
+    // v0.1.0 (the auto-release-only branches are simply skipped), which is
+    // what guarantee #1's tolerant-import/inertness null test relies on.
+    //
+    // Mechanism (this class's own concrete implementation of the brief's
+    // "effective release = min(user Release-ms, a value derived from the
+    // detector envelope's own recent fall rate)" - inspired by, not a
+    // reproduction of, Waves F6's proprietary ARC, per the design brief's
+    // honesty section): a second, always-on internal envelope
+    // (`fastReferenceEnvelopeLinear`) tracks the same rectified signal with
+    // the *same* Attack coefficient as the main envelope but a *fixed*,
+    // Release-setting-independent fast release (tied to this plugin's own
+    // Release floor - see Detector.cpp) - a dedicated "as fast as this
+    // design ever gets" tracker of what the signal is actually doing right
+    // now. Deriving the "recent fall rate" measurement from *that* fast
+    // envelope, rather than from the main (possibly very slow, e.g. a
+    // musical 500 ms Release) envelope itself, is the key design choice: a
+    // slow envelope is, by construction, a low-pass-filtered view of the
+    // input that is itself rate-limited to roughly its own release time
+    // constant, so measuring "how fast is the slow envelope falling" mostly
+    // just measures the slow envelope's own coefficient back at itself,
+    // regardless of how fast the true underlying signal is actually moving
+    // - an early implementation of this class made exactly that mistake.
+    // Once per processSubBlock() call, the fast envelope's own recent dB
+    // fall rate is converted to an implied exponential time constant (the
+    // tau a pure one-pole decay at that rate would have), clamped to [this
+    // plugin's own Release floor, the user's own Release-ms setting], and
+    // used as a second, auto-derived release coefficient for a separate
+    // output envelope (`outputEnvelopeLinear`) that is what actually feeds
+    // the gain computer when this flag is on. A signal whose own level is
+    // still genuinely falling when it crosses back under Threshold (e.g. a
+    // naturally-decaying transient) keeps measuring a real fall rate for as
+    // long as that natural decay continues, keeping the sped-up coefficient
+    // engaged; a signal that drops to a new, flat (even if much lower)
+    // level and stays there only shows a fall rate for the brief instant
+    // the fast envelope itself is catching up to that new level, after
+    // which the measured rate collapses back toward zero and this falls
+    // back to the plain user coefficient - i.e. "always <= the Release
+    // setting," matching F6 ARC's documented promise, never *slower*. See
+    // tests/AutoReleaseTests.cpp (design-brief guarantee #3).
+    void setAutoRelease (bool shouldAutoRelease) noexcept { autoReleaseEnabled = shouldAutoRelease; }
+
     // Processes `numSamples` samples (<= the sub-block granularity the
     // caller is using, see DynamicBand::processSubBlock) starting at
     // `startSample` within both `preChainBlock` (read-only input, tapped
@@ -106,6 +150,30 @@ private:
 
     float attackCoefficient = 0.0f;
     float releaseCoefficient = 0.0f;
+    float userReleaseMs = 150.0f;
+
+    // Program-dependent auto-release state (see setAutoRelease()'s docs).
+    // The absolute floor of the auto-derived effective release, tied to
+    // this plugin's own Release parameter floor (ParameterLayout.cpp) so
+    // it's a self-consistent reference rather than an arbitrary extra
+    // magic number.
+    static constexpr float autoReleaseFloorMs = 5.0f;
+
+    bool autoReleaseEnabled = false;
+    float outputEnvelopeLinear = 0.0f;
+    float autoReleaseCoefficient = 0.0f;
+    float previousReferenceLevelDbForAutoRelease = minusInfinityDb;
+    size_t previousSubBlockNumSamplesForAutoRelease = 0;
+    bool haveAutoReleaseReference = false;
+
+    // Fast reference envelope (see setAutoRelease()'s docs) - same Attack
+    // coefficient as the user's own, but a fixed, Release-setting-
+    // independent fast release, so it tracks the true signal's own recent
+    // behaviour closely regardless of how slow the user's Release is.
+    // fastReleaseCoefficient is derived once (prepare()/whenever sampleRate
+    // changes) from autoReleaseFloorMs, independent of setReleaseMs().
+    float fastEnvelopeLinear = 0.0f;
+    float fastReleaseCoefficient = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Detector)
 };

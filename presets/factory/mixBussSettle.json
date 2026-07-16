@@ -1,0 +1,17 @@
+{
+    "format": "basilica-preset-1",
+    "plugin": "com.yvesvogl.lancet",
+    "pluginVersion": "0.2.0",
+    "name": "Mix Buss Settle",
+    "category": "Bus",
+    "parameters": {
+        "b3_on": true,
+        "b3_freq": 2800.0,
+        "b3_q": 1.0,
+        "b3_thresh": -20.0,
+        "b3_range": -3.0,
+        "b3_attack": 15.0,
+        "b3_release": 250.0,
+        "b3_gainQ": true
+    }
+}

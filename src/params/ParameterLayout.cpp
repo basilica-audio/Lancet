@@ -36,6 +36,8 @@ namespace
         const char* attack;
         const char* release;
         const char* listen;
+        const char* autoRelease;
+        const char* gainQ;
     };
 
     // Adds one band's full parameter set. `shelfLabel` names which shelf
@@ -102,19 +104,26 @@ namespace
             -30.0f,
             juce::AudioParameterFloatAttributes().withLabel ("dB")));
 
-        // Attack: 0.5 - 100 ms, default 5 ms.
+        // Attack: 0.1 - 500 ms, default 5 ms. v0.2.0 widened both ends
+        // (floor 0.5 -> 0.1 ms, ceiling 100 -> 500 ms) per
+        // docs/design-brief.md - the v0.1 range was a strict subset, so no
+        // clamping is needed for any pre-existing session value on tolerant
+        // import.
         layout.add (std::make_unique<juce::AudioParameterFloat> (
             juce::ParameterID { ids.attack, 1 },
             labelPrefix + " Attack",
-            makeLogRange (0.5f, 100.0f),
+            makeLogRange (0.1f, 500.0f),
             5.0f,
             juce::AudioParameterFloatAttributes().withLabel ("ms")));
 
-        // Release: 10 - 1000 ms, default 150 ms.
+        // Release: 5 - 1500 ms, default 150 ms. v0.2.0 widened both ends
+        // (floor 10 -> 5 ms, ceiling 1000 -> 1500 ms) per
+        // docs/design-brief.md - same tolerant-import subset property as
+        // Attack above.
         layout.add (std::make_unique<juce::AudioParameterFloat> (
             juce::ParameterID { ids.release, 1 },
             labelPrefix + " Release",
-            makeLogRange (10.0f, 1000.0f),
+            makeLogRange (5.0f, 1500.0f),
             150.0f,
             juce::AudioParameterFloatAttributes().withLabel ("ms")));
 
@@ -122,6 +131,20 @@ namespace
         // never changes existing default behaviour.
         layout.add (std::make_unique<juce::AudioParameterBool> (
             juce::ParameterID { ids.listen, 1 }, labelPrefix + " Listen", false));
+
+        // Program-dependent auto-release (v0.2.0, docs/design-brief.md §2/§3):
+        // off by default for every band - required for the tolerant-import
+        // guarantee (a v0.1.0 session must sound identical after import) and
+        // for the plain fixed-Release-ms behaviour to remain the default.
+        layout.add (std::make_unique<juce::AudioParameterBool> (
+            juce::ParameterID { ids.autoRelease, 1 }, labelPrefix + " Auto Release", false));
+
+        // Gain/Q coupling (v0.2.0, docs/design-brief.md §2/§3): off by
+        // default for every band - an opt-in analog-style softening
+        // character switch, not a forced behavioural change to existing
+        // bands.
+        layout.add (std::make_unique<juce::AudioParameterBool> (
+            juce::ParameterID { ids.gainQ, 1 }, labelPrefix + " Gain/Q", false));
     }
 }
 
@@ -146,32 +169,38 @@ namespace lnct
         // defaults off, matching docs/design-brief.md.
         addBandParameters (layout,
                             { ParamIDs::b1On, ParamIDs::b1Type, ParamIDs::b1Freq, ParamIDs::b1Q, ParamIDs::b1Gain,
-                              ParamIDs::b1Range, ParamIDs::b1Threshold, ParamIDs::b1Attack, ParamIDs::b1Release, ParamIDs::b1Listen },
+                              ParamIDs::b1Range, ParamIDs::b1Threshold, ParamIDs::b1Attack, ParamIDs::b1Release, ParamIDs::b1Listen,
+                              ParamIDs::b1AutoRelease, ParamIDs::b1GainQ },
                             "Band 1", 100.0f, false, "Low Shelf");
 
         addBandParameters (layout,
                             { ParamIDs::b2On, nullptr, ParamIDs::b2Freq, ParamIDs::b2Q, ParamIDs::b2Gain,
-                              ParamIDs::b2Range, ParamIDs::b2Threshold, ParamIDs::b2Attack, ParamIDs::b2Release, ParamIDs::b2Listen },
+                              ParamIDs::b2Range, ParamIDs::b2Threshold, ParamIDs::b2Attack, ParamIDs::b2Release, ParamIDs::b2Listen,
+                              ParamIDs::b2AutoRelease, ParamIDs::b2GainQ },
                             "Band 2", 250.0f, false, {});
 
         addBandParameters (layout,
                             { ParamIDs::b3On, nullptr, ParamIDs::b3Freq, ParamIDs::b3Q, ParamIDs::b3Gain,
-                              ParamIDs::b3Range, ParamIDs::b3Threshold, ParamIDs::b3Attack, ParamIDs::b3Release, ParamIDs::b3Listen },
+                              ParamIDs::b3Range, ParamIDs::b3Threshold, ParamIDs::b3Attack, ParamIDs::b3Release, ParamIDs::b3Listen,
+                              ParamIDs::b3AutoRelease, ParamIDs::b3GainQ },
                             "Band 3", 630.0f, true, {});
 
         addBandParameters (layout,
                             { ParamIDs::b4On, nullptr, ParamIDs::b4Freq, ParamIDs::b4Q, ParamIDs::b4Gain,
-                              ParamIDs::b4Range, ParamIDs::b4Threshold, ParamIDs::b4Attack, ParamIDs::b4Release, ParamIDs::b4Listen },
+                              ParamIDs::b4Range, ParamIDs::b4Threshold, ParamIDs::b4Attack, ParamIDs::b4Release, ParamIDs::b4Listen,
+                              ParamIDs::b4AutoRelease, ParamIDs::b4GainQ },
                             "Band 4", 1600.0f, false, {});
 
         addBandParameters (layout,
                             { ParamIDs::b5On, nullptr, ParamIDs::b5Freq, ParamIDs::b5Q, ParamIDs::b5Gain,
-                              ParamIDs::b5Range, ParamIDs::b5Threshold, ParamIDs::b5Attack, ParamIDs::b5Release, ParamIDs::b5Listen },
+                              ParamIDs::b5Range, ParamIDs::b5Threshold, ParamIDs::b5Attack, ParamIDs::b5Release, ParamIDs::b5Listen,
+                              ParamIDs::b5AutoRelease, ParamIDs::b5GainQ },
                             "Band 5", 4000.0f, false, {});
 
         addBandParameters (layout,
                             { ParamIDs::b6On, ParamIDs::b6Type, ParamIDs::b6Freq, ParamIDs::b6Q, ParamIDs::b6Gain,
-                              ParamIDs::b6Range, ParamIDs::b6Threshold, ParamIDs::b6Attack, ParamIDs::b6Release, ParamIDs::b6Listen },
+                              ParamIDs::b6Range, ParamIDs::b6Threshold, ParamIDs::b6Attack, ParamIDs::b6Release, ParamIDs::b6Listen,
+                              ParamIDs::b6AutoRelease, ParamIDs::b6GainQ },
                             "Band 6", 10000.0f, false, "High Shelf");
 
         //======================================================================

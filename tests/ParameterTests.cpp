@@ -49,10 +49,24 @@ namespace
         checkFloatRange (apvts, thresholdId, -60.0f, 0.0f);
 
         checkFloatDefault (apvts, attackId, 5.0f);
-        checkFloatRange (apvts, attackId, 0.5f, 100.0f);
+        checkFloatRange (apvts, attackId, 0.1f, 500.0f);
 
         checkFloatDefault (apvts, releaseId, 150.0f);
-        checkFloatRange (apvts, releaseId, 10.0f, 1000.0f);
+        checkFloatRange (apvts, releaseId, 5.0f, 1500.0f);
+    }
+
+    // v0.2.0's two new per-band booleans (docs/design-brief.md §2/§3) - both
+    // default off.
+    void checkAutoReleaseAndGainQDefaultOff (juce::AudioProcessorValueTreeState& apvts,
+                                              const char* autoReleaseId, const char* gainQId)
+    {
+        auto* autoRelease = dynamic_cast<juce::AudioParameterBool*> (apvts.getParameter (autoReleaseId));
+        REQUIRE (autoRelease != nullptr);
+        CHECK (autoRelease->get() == false);
+
+        auto* gainQ = dynamic_cast<juce::AudioParameterBool*> (apvts.getParameter (gainQId));
+        REQUIRE (gainQ != nullptr);
+        CHECK (gainQ->get() == false);
     }
 }
 
@@ -73,33 +87,50 @@ TEST_CASE ("Processor instantiates with the expected parameters", "[processor][p
 
             ParamIDs::b1On, ParamIDs::b1Type, ParamIDs::b1Freq, ParamIDs::b1Q, ParamIDs::b1Gain, ParamIDs::b1Range,
             ParamIDs::b1Threshold, ParamIDs::b1Attack, ParamIDs::b1Release, ParamIDs::b1Listen,
+            ParamIDs::b1AutoRelease, ParamIDs::b1GainQ,
 
             ParamIDs::b2On, ParamIDs::b2Freq, ParamIDs::b2Q, ParamIDs::b2Gain, ParamIDs::b2Range,
             ParamIDs::b2Threshold, ParamIDs::b2Attack, ParamIDs::b2Release, ParamIDs::b2Listen,
+            ParamIDs::b2AutoRelease, ParamIDs::b2GainQ,
 
             ParamIDs::b3On, ParamIDs::b3Freq, ParamIDs::b3Q, ParamIDs::b3Gain, ParamIDs::b3Range,
             ParamIDs::b3Threshold, ParamIDs::b3Attack, ParamIDs::b3Release, ParamIDs::b3Listen,
+            ParamIDs::b3AutoRelease, ParamIDs::b3GainQ,
 
             ParamIDs::b4On, ParamIDs::b4Freq, ParamIDs::b4Q, ParamIDs::b4Gain, ParamIDs::b4Range,
             ParamIDs::b4Threshold, ParamIDs::b4Attack, ParamIDs::b4Release, ParamIDs::b4Listen,
+            ParamIDs::b4AutoRelease, ParamIDs::b4GainQ,
 
             ParamIDs::b5On, ParamIDs::b5Freq, ParamIDs::b5Q, ParamIDs::b5Gain, ParamIDs::b5Range,
             ParamIDs::b5Threshold, ParamIDs::b5Attack, ParamIDs::b5Release, ParamIDs::b5Listen,
+            ParamIDs::b5AutoRelease, ParamIDs::b5GainQ,
 
             ParamIDs::b6On, ParamIDs::b6Type, ParamIDs::b6Freq, ParamIDs::b6Q, ParamIDs::b6Gain, ParamIDs::b6Range,
             ParamIDs::b6Threshold, ParamIDs::b6Attack, ParamIDs::b6Release, ParamIDs::b6Listen,
+            ParamIDs::b6AutoRelease, ParamIDs::b6GainQ,
         };
 
         for (const auto* id : allIds)
             CHECK (apvts.getParameter (id) != nullptr);
     }
 
-    SECTION ("total parameter count matches the v0.1.0 layout")
+    SECTION ("total parameter count matches the v0.2.0 layout")
     {
-        // 3 global (in/out trim, mix) + bands 1 & 6 (10 each: On, Type,
-        // Freq, Q, Gain, Range, Threshold, Attack, Release, Listen) + bands
-        // 2-5 (9 each: no Type) = 3 + 20 + 36 = 59.
-        CHECK (apvts.processor.getParameters().size() == 59);
+        // 3 global (in/out trim, mix) + bands 1 & 6 (12 each: On, Type,
+        // Freq, Q, Gain, Range, Threshold, Attack, Release, Listen,
+        // AutoRelease, GainQ) + bands 2-5 (11 each: no Type) =
+        // 3 + 24 + 44 = 71.
+        CHECK (apvts.processor.getParameters().size() == 71);
+    }
+
+    SECTION ("AutoRelease/GainQ default off for every band")
+    {
+        checkAutoReleaseAndGainQDefaultOff (apvts, ParamIDs::b1AutoRelease, ParamIDs::b1GainQ);
+        checkAutoReleaseAndGainQDefaultOff (apvts, ParamIDs::b2AutoRelease, ParamIDs::b2GainQ);
+        checkAutoReleaseAndGainQDefaultOff (apvts, ParamIDs::b3AutoRelease, ParamIDs::b3GainQ);
+        checkAutoReleaseAndGainQDefaultOff (apvts, ParamIDs::b4AutoRelease, ParamIDs::b4GainQ);
+        checkAutoReleaseAndGainQDefaultOff (apvts, ParamIDs::b5AutoRelease, ParamIDs::b5GainQ);
+        checkAutoReleaseAndGainQDefaultOff (apvts, ParamIDs::b6AutoRelease, ParamIDs::b6GainQ);
     }
 
     SECTION ("On defaults: every band off except Band 3")
