@@ -1,0 +1,12 @@
+{
+    "format": "basilica-preset-1",
+    "plugin": "com.yvesvogl.lancet",
+    "pluginVersion": "0.2.0",
+    "name": "Default",
+    "category": "Init",
+    "parameters": {
+        "in_trim": 0.0,
+        "out_trim": 0.0,
+        "mix": 100.0
+    }
+}

@@ -2,6 +2,40 @@
 
 *Cut where it counts — a surgical dynamic EQ with an analog soul.*
 
+## What's new in v0.2.0
+
+A research-derived deep-dive rework (see `docs/design-brief.md`/
+`docs/research-notes.md`), the suite's M2 preset system, and a German frame
+localisation:
+
+- **Program-dependent Auto Release** (`bN_autoRelease`, new per-band toggle,
+  off by default): when on, a band's *effective* release time shortens
+  automatically - never slower than the manual Release setting - when the
+  signal's own envelope is already falling on its own (e.g. a naturally
+  decaying transient), inspired by (not a reproduction of) the "ARC"-style
+  release behaviour documented in F6-class dynamic EQs. Automation/preset
+  controllable in v0.2.0; a dedicated editor toggle is roadmap M3.
+- **Gain/Q coupling** (`bN_gainQ`, new per-band toggle, off by default):
+  when on, a band's own filter Q softens (widens) proportionally to how
+  hard its dynamic gain is currently moving, for a gentler, more
+  analog-style character at deeper dynamic moves - the band's *static*
+  Gain never affects Q, only its dynamic component does. Same
+  automation/preset-only status as Auto Release in v0.2.0.
+- **Attack/Release ranges widened**: Attack now 0.1-500 ms (was 0.5-100 ms),
+  Release now 5-1500 ms (was 10-1000 ms) - both ends, reaching both faster
+  transient-catching and slower, musical tonal-balancing use cases.
+- **Knee width is now derived from Range**, not a flat 6 dB constant -
+  shallower Range settings now read as gentler/softer, full-depth (±12 dB)
+  Range settings sound identical to v0.1.0's fixed 6 dB knee.
+- **Nine factory presets** (`docs/presets.md`) covering common use cases
+  (glue, de-essing, transient enhancement, mix-buss settling, slow tonal
+  balancing, resonance taming, and a diagnostic Auto Release demo), plus a
+  preset bar (Save/Save As/Delete/Import/Export, factory + user library) at
+  the top of the editor.
+- A v0.1.0 session loads cleanly into v0.2.0 (tolerant import): every
+  existing parameter value is preserved exactly, and the two new per-band
+  toggles populate at their off default.
+
 ## What it is
 
 Lancet is a six-band dynamic EQ in the spirit of the Waves F6 class: each band is a normal parametric EQ band (bell, or shelf on Band 1/Band 6) whose gain can additionally move with the program material. Feed it loud and it reacts — cutting a resonance only when it flares up, or opening a boost only when a part gets buried — then settles back to its static setting once the signal drops back down. Because each band's dynamic move is driven by its *own* pre-EQ, band-filtered detector, one band's cut never confuses another band's detector, and a band's own gain move never feeds back into its own detection.
@@ -40,10 +74,12 @@ Every band's detector taps the signal right after Input Trim, *before* Band 1 - 
 | **Q** | 0.3 - 12 | 1.0 | | How narrow (high Q) or broad (low Q) the band is. **Ignored in Shelf mode**, which always uses a fixed, standard shelf slope (Q = 0.707) regardless of this setting. |
 | **Gain** | -12 - +12 | 0 | dB | The band's *static* gain - always applied, dynamic or not. Set this to your "at rest" EQ move; Range then adds or subtracts on top of it when the detector triggers. |
 | **Range** | -12 - +12 | 0 | dB | How far the band's gain can move dynamically, on top of Gain. **0 = a pure static EQ band** (no detector influence at all). Negative Range cuts as the signal gets louder past Threshold (the classic resonance-taming/de-essing move); positive Range boosts as it gets louder (an upward "duck-in" expansion move, useful for e.g. bringing out a pick attack only on hard-hit notes). |
-| **Thresh** | -60 - 0 | -30 | dB | The detector level above which the dynamic move starts engaging. A 6 dB soft knee is centred on this value, so the transition in is gradual rather than a hard switch. |
-| **Attack** | 0.5 - 100 | 5 | ms | How quickly the dynamic gain moves once the detector crosses Threshold. Fast attack catches transients hard; slower attack lets a brief peak through before reacting, which can sound more natural on percussive material. |
-| **Release** | 10 - 1000 | 150 | ms | How quickly the dynamic gain returns toward Gain once the detector drops back below Threshold. Fast release can pump audibly on sustained material; slow release smooths the return out but can hold a cut/boost into content that no longer needs it. |
+| **Thresh** | -60 - 0 | -30 | dB | The detector level above which the dynamic move starts engaging. A soft knee centred on this value makes the transition in gradual rather than a hard switch - the knee's own width scales with Range (v0.2.0): `clamp(\|Range\| * 0.5, 2, 10)` dB, so shallow Range settings read gentler and full-depth (±12 dB) Range settings sound identical to v0.1.0's fixed 6 dB knee. |
+| **Attack** | 0.1 - 500 | 5 | ms | How quickly the dynamic gain moves once the detector crosses Threshold. Fast attack catches transients hard; slower attack lets a brief peak through before reacting, which can sound more natural on percussive material. The 500 ms ceiling is meant for slow, musical tonal-balancing moves, not transient catching. |
+| **Release** | 5 - 1500 | 150 | ms | How quickly the dynamic gain returns toward Gain once the detector drops back below Threshold. Fast release can pump audibly on sustained material; slow release smooths the return out but can hold a cut/boost into content that no longer needs it. |
 | **Listen** | Off / On | Off | | Solos that band's own detector signal - the bandpass-filtered, pre-EQ audio that's actually driving its dynamic move - in place of the normal program output, for auditioning exactly what triggers it. Exclusive: engaging Listen on one band disengages any other band's Listen. The full signal chain (including every band's own processing) keeps running underneath, so disengaging Listen never pops. |
+| **Auto Release** (v0.2.0) | Off / On | Off | | Program-dependent auto-release: when on, the *effective* release time for a given transition shortens automatically (never below this plugin's own 5 ms Release floor, never past the manual Release setting itself) whenever the signal's own envelope is already falling on its own - useful for letting a band relax faster on naturally-decaying material without giving up a slower, musical manual Release for sustained material. Automation/preset-only in v0.2.0 - no dedicated editor knob yet (roadmap M3). |
+| **Gain/Q** (v0.2.0) | Off / On | Off | | Gain/Q coupling: when on, the band's own filter Q widens (softens) proportionally to how far its *dynamic* gain currently sits toward Range - a gentler, more analog-style character at deeper dynamic moves. Static Gain never affects Q, only the dynamic component does. Automation/preset-only in v0.2.0 - no dedicated editor knob yet (roadmap M3). |
 
 ### Global
 
@@ -52,6 +88,23 @@ Every band's detector taps the signal right after Input Trim, *before* Band 1 - 
 | **Input Trim** | -12 - +12 | 0 | dB | Gain applied before Band 1 - and before every band's detector taps the signal, so it also shifts what level reaches each band's Threshold. |
 | **Output Trim** | -12 - +12 | 0 | dB | Gain applied after Band 6 and after the Mix blend - the final gain stage, for matching Lancet's output level to whatever follows it in the chain. |
 | **Mix** | 0 - 100 | 100 | % | Parallel dry/wet blend of the whole six-band chain. 100% is fully processed; lower values blend in progressively more of the untouched (but still Input-Trimmed) signal - useful for "New York"-style parallel dynamic EQ, where you want the correction to add rather than fully replace. |
+
+## Presets (v0.2.0)
+
+A preset bar sits at the top of the editor: `[<] [Preset Name] [>]` to step
+through the factory and user library alphabetically, `Save`/`Save As...` to
+write your own, `Delete` for user presets, `Import.../Export...` for single
+`.basilicapreset` files or `.zip` banks, and a menu (click the preset name)
+with a "Set current as default" entry for your own out-of-the-box starting
+point. Nine factory presets ship with v0.2.0 - see `docs/presets.md` for
+what each one does and why. User presets are stored per-user at
+`~/Library/Audio/Presets/Yves Vogl/Lancet/` on macOS
+(`%APPDATA%/Yves Vogl/Lancet/Presets/` on Windows).
+
+The editor's frame strings (preset bar labels, menus, dialogs) are
+localised to German automatically when the system language is German;
+parameter names, units, and technical terms (Attack, Release, Hz, dB, ms, …)
+always stay in English, matching every other Basilica Audio plugin.
 
 ## Tips
 

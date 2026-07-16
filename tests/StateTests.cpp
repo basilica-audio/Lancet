@@ -92,12 +92,12 @@ TEST_CASE ("State round-trip preserves every bool parameter (On/Listen, every ba
     processor.prepareToPlay (48000.0, 512);
 
     static constexpr const char* boolIds[] = {
-        ParamIDs::b1On, ParamIDs::b1Listen,
-        ParamIDs::b2On, ParamIDs::b2Listen,
-        ParamIDs::b3On, ParamIDs::b3Listen, // Band 3 defaults On - still round-trips like every other bool
-        ParamIDs::b4On, ParamIDs::b4Listen,
-        ParamIDs::b5On, ParamIDs::b5Listen,
-        ParamIDs::b6On, ParamIDs::b6Listen,
+        ParamIDs::b1On, ParamIDs::b1Listen, ParamIDs::b1AutoRelease, ParamIDs::b1GainQ,
+        ParamIDs::b2On, ParamIDs::b2Listen, ParamIDs::b2AutoRelease, ParamIDs::b2GainQ,
+        ParamIDs::b3On, ParamIDs::b3Listen, ParamIDs::b3AutoRelease, ParamIDs::b3GainQ, // Band 3 defaults On - still round-trips like every other bool
+        ParamIDs::b4On, ParamIDs::b4Listen, ParamIDs::b4AutoRelease, ParamIDs::b4GainQ,
+        ParamIDs::b5On, ParamIDs::b5Listen, ParamIDs::b5AutoRelease, ParamIDs::b5GainQ,
+        ParamIDs::b6On, ParamIDs::b6Listen, ParamIDs::b6AutoRelease, ParamIDs::b6GainQ,
     };
 
     std::vector<juce::RangedAudioParameter*> params;

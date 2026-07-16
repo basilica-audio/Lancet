@@ -1,6 +1,9 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 #include "params/ParameterIds.h"
+#include "presets/Localisation.h"
+
+#include <BinaryData.h>
 
 namespace
 {
@@ -11,13 +14,14 @@ namespace
     constexpr int toggleRowHeight = 24;
     constexpr int comboRowHeight = 22;
     constexpr int margin = 12;
+    constexpr int presetBarHeight = 28;
     constexpr int numColumns = LancetEngine::numBands;
     constexpr int rowHeight = labelHeight + knobSize + textBoxHeight;
     constexpr int numKnobRows = 7; // Freq, Q, Gain, Range, Threshold, Attack, Release
 
     constexpr int editorWidth = margin * 2 + numColumns * knobSize + (numColumns + 1) * margin;
 
-    constexpr int editorHeight = margin + rowHeight // top strip (In Trim/Out Trim/Mix)
+    constexpr int editorHeight = margin + presetBarHeight + margin + rowHeight // preset bar + top strip (In Trim/Out Trim/Mix)
                                   + margin + bandLabelHeight + toggleRowHeight + comboRowHeight
                                   + numKnobRows * rowHeight + margin;
 
@@ -51,12 +55,32 @@ namespace
         { ParamIDs::b6On, ParamIDs::b6Type, ParamIDs::b6Freq, ParamIDs::b6Q, ParamIDs::b6Gain,
           ParamIDs::b6Range, ParamIDs::b6Threshold, ParamIDs::b6Attack, ParamIDs::b6Release, ParamIDs::b6Listen },
     } };
+
+    // M2 i18n frame (.scaffold/specs/preset-system-m2.md): selects German
+    // (resources/i18n/de.txt) or falls through to English, once, at editor
+    // construction - see Localisation.h's docs. `presetBar` is a member
+    // initialised via the constructor's initialiser list, and its own
+    // constructor already calls TRANS() on every button label - member
+    // initialisers run in declaration order regardless of the order
+    // they're written in, so this helper (called from presetBar's own
+    // initialiser expression below) is what actually guarantees
+    // installLocalisation() runs before presetBar exists, not an
+    // installLocalisation() call in the constructor *body*, which would run
+    // too late. See basilica-audio/nave's docs/preset-system-notes.md.
+    basilica::presets::PresetManager& initLocalisationThenGetPresetManager (LancetAudioProcessor& processor)
+    {
+        basilica::presets::installLocalisation (BinaryData::de_txt, BinaryData::de_txtSize);
+        return processor.presetManager;
+    }
 }
 
 LancetAudioProcessorEditor::LancetAudioProcessorEditor (LancetAudioProcessor& processorToEdit)
     : juce::AudioProcessorEditor (&processorToEdit),
-      audioProcessor (processorToEdit)
+      audioProcessor (processorToEdit),
+      presetBar (initLocalisationThenGetPresetManager (processorToEdit))
 {
+    addAndMakeVisible (presetBar);
+
     configureKnob (inTrimKnob, ParamIDs::inTrim, "In Trim");
     configureKnob (outTrimKnob, ParamIDs::outTrim, "Out Trim");
     configureKnob (mixKnob, ParamIDs::mix, "Mix");
@@ -147,6 +171,9 @@ void LancetAudioProcessorEditor::configureBand (BandControls& band, int bandInde
 void LancetAudioProcessorEditor::resized()
 {
     auto bounds = getLocalBounds().reduced (margin);
+
+    presetBar.setBounds (bounds.removeFromTop (presetBarHeight));
+    bounds.removeFromTop (margin);
 
     // Top strip: In Trim, Out Trim, Mix - three knobs, left-aligned, not
     // stretched across the full band-column grid width below.

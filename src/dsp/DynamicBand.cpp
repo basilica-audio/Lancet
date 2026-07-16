@@ -26,7 +26,7 @@ void DynamicBand::prepare (const juce::dsp::ProcessSpec& spec)
     detector.setAttackMs (5.0f);
     detector.setReleaseMs (150.0f);
     detector.setFrequencyAndQ (frequencyHz, effectiveQ());
-    updateFilterCoefficients (staticGainDb);
+    updateFilterCoefficients (staticGainDb, effectiveQ());
 }
 
 void DynamicBand::reset()
@@ -36,7 +36,24 @@ void DynamicBand::reset()
     gainSmoothed.setCurrentAndTargetValue (gainSmoothed.getTargetValue());
 }
 
-float DynamicBand::softKneeOvershoot (float overshootDb) noexcept
+float DynamicBand::computeKneeWidthDb() const noexcept
+{
+    return juce::jlimit (kneeWidthFloorDb, kneeWidthCeilingDb, std::abs (rangeDb) * kneeWidthRangeSlope);
+}
+
+float DynamicBand::computeMainFilterQ (float dynamicGainDbAbs) const noexcept
+{
+    const auto baseQ = effectiveQ();
+
+    if (! gainQEnabled || rangeDb == 0.0f)
+        return baseQ;
+
+    const auto fraction = juce::jlimit (0.0f, 1.0f, dynamicGainDbAbs / std::abs (rangeDb));
+    const auto qMultiplier = juce::jmap (fraction, 1.0f, gainQMinMultiplier);
+    return baseQ * qMultiplier;
+}
+
+float DynamicBand::softKneeOvershoot (float overshootDb, float kneeWidthDb) noexcept
 {
     if (2.0f * overshootDb <= -kneeWidthDb)
         return 0.0f;
@@ -50,7 +67,7 @@ float DynamicBand::softKneeOvershoot (float overshootDb) noexcept
     return overshootDb;
 }
 
-void DynamicBand::updateFilterCoefficients (float appliedGainDb) noexcept
+void DynamicBand::updateFilterCoefficients (float appliedGainDb, float mainFilterQ) noexcept
 {
     const auto gainFactor = juce::Decibels::decibelsToGain (appliedGainDb);
 
@@ -58,15 +75,15 @@ void DynamicBand::updateFilterCoefficients (float appliedGainDb) noexcept
 
     if (! isEffectivelyShelf())
     {
-        raw = juce::dsp::IIR::ArrayCoefficients<float>::makePeakFilter (sampleRate, frequencyHz, q, gainFactor);
+        raw = juce::dsp::IIR::ArrayCoefficients<float>::makePeakFilter (sampleRate, frequencyHz, mainFilterQ, gainFactor);
     }
     else if (shelfDirection == ShelfDirection::low)
     {
-        raw = juce::dsp::IIR::ArrayCoefficients<float>::makeLowShelf (sampleRate, frequencyHz, fixedShelfQ, gainFactor);
+        raw = juce::dsp::IIR::ArrayCoefficients<float>::makeLowShelf (sampleRate, frequencyHz, mainFilterQ, gainFactor);
     }
     else
     {
-        raw = juce::dsp::IIR::ArrayCoefficients<float>::makeHighShelf (sampleRate, frequencyHz, fixedShelfQ, gainFactor);
+        raw = juce::dsp::IIR::ArrayCoefficients<float>::makeHighShelf (sampleRate, frequencyHz, mainFilterQ, gainFactor);
     }
 
     lnct::applyBiquadCoefficients (*mainFilter.state, raw);
@@ -98,7 +115,7 @@ void DynamicBand::processSubBlock (juce::dsp::AudioBlock<float> mainSubBlock,
     if (rangeDb != 0.0f)
     {
         const auto overshootDb = levelDb - thresholdDb;
-        const auto gainComputerDb = softKneeOvershoot (overshootDb);
+        const auto gainComputerDb = softKneeOvershoot (overshootDb, computeKneeWidthDb());
         const auto dynamicMagnitudeDb = juce::jlimit (0.0f, std::abs (rangeDb), gainComputerDb);
         dynamicGainDb = dynamicMagnitudeDb * (rangeDb > 0.0f ? 1.0f : -1.0f);
     }
@@ -107,10 +124,16 @@ void DynamicBand::processSubBlock (juce::dsp::AudioBlock<float> mainSubBlock,
     gainSmoothed.setTargetValue (totalGainDb);
     const auto appliedGainDb = gainSmoothed.skip (static_cast<int> (numSamples));
 
+    // Gain/Q coupling (v0.2.0, opt-in): the main filter's Q is derived from
+    // the *instantaneous* dynamic gain magnitude (not the smoothed applied
+    // gain) so it tracks the gain computer's own current decision - see
+    // class comment.
+    const auto mainFilterQ = computeMainFilterQ (std::abs (dynamicGainDb));
+
     // Coefficients are recomputed every sub-block regardless of `on`, so
     // toggling the band back on mid-stream never has to catch up from a
     // stale/default filter shape.
-    updateFilterCoefficients (appliedGainDb);
+    updateFilterCoefficients (appliedGainDb, mainFilterQ);
 
     // appliedGainDb == 0.0f exactly (not just "close to 0") is a real,
     // reachable case - a static band (Range == 0) with Gain == 0 settles

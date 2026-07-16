@@ -238,8 +238,15 @@ TEST_CASE ("Rapid parameter automation across many blocks produces no NaN/Inf", 
             setParam (processor, (prefix + "gain").toRawUTF8(), -12.0f + unit (rng) * 24.0f);
             setParam (processor, (prefix + "range").toRawUTF8(), -12.0f + unit (rng) * 24.0f);
             setParam (processor, (prefix + "thresh").toRawUTF8(), -60.0f + unit (rng) * 60.0f);
-            setParam (processor, (prefix + "attack").toRawUTF8(), 0.5f + unit (rng) * 99.5f);
-            setParam (processor, (prefix + "release").toRawUTF8(), 10.0f + unit (rng) * 990.0f);
+            // v0.2.0-widened ranges (docs/design-brief.md) - sweeps the new
+            // 0.1 ms/500 ms and 5 ms/1500 ms boundary regions too.
+            setParam (processor, (prefix + "attack").toRawUTF8(), 0.1f + unit (rng) * 499.9f);
+            setParam (processor, (prefix + "release").toRawUTF8(), 5.0f + unit (rng) * 1495.0f);
+            // v0.2.0's two new opt-in booleans - randomised so this sweep
+            // also exercises the auto-release and gain/Q-coupling code
+            // paths, not just their inert-off default.
+            setParamNormalised (processor, (prefix + "autoRelease").toRawUTF8(), unit (rng) > 0.5f ? 1.0f : 0.0f);
+            setParamNormalised (processor, (prefix + "gainQ").toRawUTF8(), unit (rng) > 0.5f ? 1.0f : 0.0f);
         }
 
         setParam (processor, ParamIDs::inTrim, -12.0f + unit (rng) * 24.0f);

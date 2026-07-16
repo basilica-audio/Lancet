@@ -1,0 +1,10 @@
+{
+    "format": "basilica-preset-1",
+    "plugin": "com.yvesvogl.lancet",
+    "pluginVersion": "0.2.0",
+    "name": "Listen Check",
+    "category": "Init",
+    "parameters": {
+        "b1_listen": true
+    }
+}
