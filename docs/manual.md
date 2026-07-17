@@ -38,7 +38,7 @@ localisation:
 
 ## What it is
 
-Lancet is a six-band dynamic EQ in the spirit of the Waves F6 class: each band is a normal parametric EQ band (bell, or shelf on Band 1/Band 6) whose gain can additionally move with the program material. Feed it loud and it reacts — cutting a resonance only when it flares up, or opening a boost only when a part gets buried — then settles back to its static setting once the signal drops back down. Because each band's dynamic move is driven by its *own* pre-EQ, band-filtered detector, one band's cut never confuses another band's detector, and a band's own gain move never feeds back into its own detection.
+Lancet is a six-band dynamic EQ in the spirit of the Waves F6 class - cited here as a documented reference point for the category, without implying endorsement, sponsorship, or affiliation by Waves Audio Ltd. Each band is a normal parametric EQ band (bell, or shelf on Band 1/Band 6) whose gain can additionally move with the program material. Feed it loud and it reacts — cutting a resonance only when it flares up, or opening a boost only when a part gets buried — then settles back to its static setting once the signal drops back down. Because each band's dynamic move is driven by its *own* pre-EQ, band-filtered detector, one band's cut never confuses another band's detector, and a band's own gain move never feeds back into its own detection.
 
 Where a static EQ band asks "how much?", Lancet's dynamic bands also ask "when?" — the difference between permanently notching out a 3 kHz resonance (which also thins the tone whenever that resonance isn't present) and only pulling it back exactly when it rings.
 
