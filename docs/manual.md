@@ -2,6 +2,33 @@
 
 *Cut where it counts — a surgical dynamic EQ with an analog soul.*
 
+## What's new in v0.3.0
+
+A musical-voicing pass (see `docs/voicing-notes.md`) - measured where the
+plugin's own DSP made a measurement possible, honestly labeled "by ear, not
+yet tuned against real material" where it doesn't:
+
+- **Per-band Q/Threshold/Attack/Release defaults, tuned to each band's
+  documented role** (was a flat Q 1.0/Threshold -30 dB/Attack 5 ms/
+  Release 150 ms for every band): Band 1 (100 Hz, boom/sub control) now
+  starts slow and gentle (Attack 25 ms/Release 280 ms); Band 5 (4 kHz,
+  sibilance/harshness) starts fast (Attack 2 ms/Release 70 ms); the bands
+  in between step down progressively. Range still starts at 0 dB (idle) for
+  every band regardless - nothing moves until you dial in a Range, but once
+  you do, each band now reacts the way its role suggests it should. See the
+  updated per-band table below.
+- **Gentle Saturation** (`bN_sat`, new per-band toggle, off by default):
+  when on, a soft `tanh`-based waveshaper is applied to a band, but *only*
+  while it's actively boosting (Gain + Range's dynamic contribution net
+  positive) - a cutting or idle band is completely unaffected even with
+  Saturation on. Automation/preset controllable in v0.3.0; a dedicated
+  editor toggle is roadmap M3, same as Auto Release/Gain-Q.
+- **A tenth factory preset, "Analog Warmth Lift"** (`docs/presets.md`):
+  demonstrates the new Saturation toggle on a gentle low-mid boost.
+- A v0.2.0 session loads cleanly into v0.3.0 (tolerant import): every
+  existing parameter value is preserved exactly, and the new per-band
+  Saturation toggle populates at its off default.
+
 ## What's new in v0.2.0
 
 A research-derived deep-dive rework (see `docs/design-brief.md`/
@@ -71,15 +98,29 @@ Every band's detector taps the signal right after Input Trim, *before* Band 1 - 
 | **On** | Off / On | Off (Band 3: On) | | Enables the band. An off band is a true bypass - it doesn't touch the signal at all, though its detector keeps running underneath so there's no jump when you switch it back on. |
 | **Type** | Bell / Shelf | Bell | | **Band 1 and Band 6 only.** Band 1's Shelf is a Low Shelf (boosts/cuts everything below Freq); Band 6's Shelf is a High Shelf (boosts/cuts everything above Freq). Bands 2-5 are always Bell. |
 | **Freq** | 20 - 20000 | 100 / 250 / 630 / 1600 / 4000 / 10000 | Hz | The band's centre frequency (Bell) or corner frequency (Shelf) - both the filter's own shape *and* what its detector listens to. |
-| **Q** | 0.3 - 12 | 1.0 | | How narrow (high Q) or broad (low Q) the band is. **Ignored in Shelf mode**, which always uses a fixed, standard shelf slope (Q = 0.707) regardless of this setting. |
+| **Q** | 0.3 - 12 | 0.9 / 1.1 / 1.0 / 1.2 / 1.4 / 1.0 (v0.3.0, per band - see table below) | | How narrow (high Q) or broad (low Q) the band is. **Ignored in Shelf mode**, which always uses a fixed, standard shelf slope (Q = 0.707) regardless of this setting. |
 | **Gain** | -12 - +12 | 0 | dB | The band's *static* gain - always applied, dynamic or not. Set this to your "at rest" EQ move; Range then adds or subtracts on top of it when the detector triggers. |
 | **Range** | -12 - +12 | 0 | dB | How far the band's gain can move dynamically, on top of Gain. **0 = a pure static EQ band** (no detector influence at all). Negative Range cuts as the signal gets louder past Threshold (the classic resonance-taming/de-essing move); positive Range boosts as it gets louder (an upward "duck-in" expansion move, useful for e.g. bringing out a pick attack only on hard-hit notes). |
-| **Thresh** | -60 - 0 | -30 | dB | The detector level above which the dynamic move starts engaging. A soft knee centred on this value makes the transition in gradual rather than a hard switch - the knee's own width scales with Range (v0.2.0): `clamp(\|Range\| * 0.5, 2, 10)` dB, so shallow Range settings read gentler and full-depth (±12 dB) Range settings sound identical to v0.1.0's fixed 6 dB knee. |
-| **Attack** | 0.1 - 500 | 5 | ms | How quickly the dynamic gain moves once the detector crosses Threshold. Fast attack catches transients hard; slower attack lets a brief peak through before reacting, which can sound more natural on percussive material. The 500 ms ceiling is meant for slow, musical tonal-balancing moves, not transient catching. |
-| **Release** | 5 - 1500 | 150 | ms | How quickly the dynamic gain returns toward Gain once the detector drops back below Threshold. Fast release can pump audibly on sustained material; slow release smooths the return out but can hold a cut/boost into content that no longer needs it. |
+| **Thresh** | -60 - 0 | -26 / -28 / -26 / -24 / -22 / -20 (v0.3.0, per band - see table below) | dB | The detector level above which the dynamic move starts engaging. A soft knee centred on this value makes the transition in gradual rather than a hard switch - the knee's own width scales with Range (v0.2.0): `clamp(\|Range\| * 0.5, 2, 10)` dB, so shallow Range settings read gentler and full-depth (±12 dB) Range settings sound identical to v0.1.0's fixed 6 dB knee. |
+| **Attack** | 0.1 - 500 | 25 / 15 / 8 / 4 / 2 / 3 (v0.3.0, per band - see table below) | ms | How quickly the dynamic gain moves once the detector crosses Threshold. Fast attack catches transients hard; slower attack lets a brief peak through before reacting, which can sound more natural on percussive material. The 500 ms ceiling is meant for slow, musical tonal-balancing moves, not transient catching. |
+| **Release** | 5 - 1500 | 280 / 180 / 130 / 100 / 70 / 90 (v0.3.0, per band - see table below) | ms | How quickly the dynamic gain returns toward Gain once the detector drops back below Threshold. Fast release can pump audibly on sustained material; slow release smooths the return out but can hold a cut/boost into content that no longer needs it. |
 | **Listen** | Off / On | Off | | Solos that band's own detector signal - the bandpass-filtered, pre-EQ audio that's actually driving its dynamic move - in place of the normal program output, for auditioning exactly what triggers it. Exclusive: engaging Listen on one band disengages any other band's Listen. The full signal chain (including every band's own processing) keeps running underneath, so disengaging Listen never pops. |
 | **Auto Release** (v0.2.0) | Off / On | Off | | Program-dependent auto-release: when on, the *effective* release time for a given transition shortens automatically (never below this plugin's own 5 ms Release floor, never past the manual Release setting itself) whenever the signal's own envelope is already falling on its own - useful for letting a band relax faster on naturally-decaying material without giving up a slower, musical manual Release for sustained material. Automation/preset-only in v0.2.0 - no dedicated editor knob yet (roadmap M3). |
 | **Gain/Q** (v0.2.0) | Off / On | Off | | Gain/Q coupling: when on, the band's own filter Q widens (softens) proportionally to how far its *dynamic* gain currently sits toward Range - a gentler, more analog-style character at deeper dynamic moves. Static Gain never affects Q, only the dynamic component does. Automation/preset-only in v0.2.0 - no dedicated editor knob yet (roadmap M3). |
+| **Saturation** (v0.3.0) | Off / On | Off | | Gentle waveshaping: when on, a soft `tanh`-based drive is applied to the band's own output, but only while it's actively boosting (Gain + the dynamic contribution net positive) - a cutting or idle band is unaffected even with this on. Drive scales with how hard the band is boosting (barely-there near 0 dB, clearly audible but still soft-knee-shaped near +12 dB). Automation/preset-only in v0.3.0 - no dedicated editor knob yet (roadmap M3). |
+
+Per-band voicing defaults (v0.3.0, `docs/voicing-notes.md`) - tuned to each
+band's typical role along the existing frequency ladder, not a flat value
+repeated across every band:
+
+| Band | Freq | Role | Q | Threshold | Attack | Release |
+|---|---|---|---|---|---|---|
+| 1 | 100 Hz (Low Shelf) | Boom/sub control | 0.9 | -26 dB | 25 ms | 280 ms |
+| 2 | 250 Hz | Mud/box resonance (vocal & guitar body) | 1.1 | -28 dB | 15 ms | 180 ms |
+| 3 | 630 Hz | General midrange presence (default-on demo band) | 1.0 | -26 dB | 8 ms | 130 ms |
+| 4 | 1600 Hz | Vocal presence / guitar edge | 1.2 | -24 dB | 4 ms | 100 ms |
+| 5 | 4000 Hz | Sibilance / pick attack / harshness | 1.4 | -22 dB | 2 ms | 70 ms |
+| 6 | 10000 Hz (High Shelf) | Air / fizz recovery | 1.0 | -20 dB | 3 ms | 90 ms |
 
 ### Global
 
@@ -89,14 +130,14 @@ Every band's detector taps the signal right after Input Trim, *before* Band 1 - 
 | **Output Trim** | -12 - +12 | 0 | dB | Gain applied after Band 6 and after the Mix blend - the final gain stage, for matching Lancet's output level to whatever follows it in the chain. |
 | **Mix** | 0 - 100 | 100 | % | Parallel dry/wet blend of the whole six-band chain. 100% is fully processed; lower values blend in progressively more of the untouched (but still Input-Trimmed) signal - useful for "New York"-style parallel dynamic EQ, where you want the correction to add rather than fully replace. |
 
-## Presets (v0.2.0)
+## Presets
 
 A preset bar sits at the top of the editor: `[<] [Preset Name] [>]` to step
 through the factory and user library alphabetically, `Save`/`Save As...` to
 write your own, `Delete` for user presets, `Import.../Export...` for single
 `.basilicapreset` files or `.zip` banks, and a menu (click the preset name)
 with a "Set current as default" entry for your own out-of-the-box starting
-point. Nine factory presets ship with v0.2.0 - see `docs/presets.md` for
+point. Ten factory presets ship with v0.3.0 - see `docs/presets.md` for
 what each one does and why. User presets are stored per-user at
 `~/Library/Audio/Presets/Yves Vogl/Lancet/` on macOS
 (`%APPDATA%/Yves Vogl/Lancet/Presets/` on Windows).

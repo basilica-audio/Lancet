@@ -38,6 +38,7 @@ namespace
             { BinaryData::chestResonanceTamer_json, BinaryData::chestResonanceTamer_jsonSize },
             { BinaryData::fastRecoveryDemo_json, BinaryData::fastRecoveryDemo_jsonSize },
             { BinaryData::listenCheck_json, BinaryData::listenCheck_jsonSize },
+            { BinaryData::analogWarmthLift_json, BinaryData::analogWarmthLift_jsonSize },
         };
     }
 
@@ -257,7 +258,7 @@ TEST_CASE ("PresetManager: every factory preset parses and loads without error",
     const auto all = manager.getAllPresets();
     const auto factoryCount = std::count_if (all.begin(), all.end(), [] (auto& e) { return e.isFactory; });
 
-    REQUIRE (factoryCount == 9); // docs/presets.md's Factory Presets table
+    REQUIRE (factoryCount == 10); // docs/presets.md's Factory Presets table
 
     for (auto& entry : all)
     {

@@ -48,6 +48,20 @@
 //     bandpass -> different measured level -> different gain -> different
 //     bandpass...); only the audible filter shape softens.
 //
+// v0.3.0 (docs/voicing-notes.md) adds a third opt-in, off-by-default
+// per-band boolean: `sat`. When on, a gentle tanh waveshaper is applied to
+// this band's own post-filter samples, but ONLY while the band is actively
+// boosting - i.e. `on == true` and the combined (static + dynamic) applied
+// gain for the current sub-block is strictly positive. A cutting or idle
+// band is completely unaffected even with `sat` on (see
+// computeSaturationDrive()/applySaturation() below) - this is deliberately
+// scoped to "boosted bands" only, per the feature's own design intent (a
+// touch of analog-style harmonic warmth on a boost, not a general-purpose
+// distortion stage). Drive scales with how much the band is currently
+// boosting (0 dB -> a near-transparent low drive, +12 dB -> a clearly
+// audible but still gentle drive), so small boosts stay nearly clean and
+// larger ones read as intentionally warmed.
+//
 // Coefficient updates (both the main filter's and the Detector's bandpass)
 // are real-time safe (see RealtimeCoefficients.h) and are only ever done
 // once per `processSubBlock()` call - the caller (LancetEngine) is
@@ -104,6 +118,7 @@ public:
     void setListen (bool shouldListen) noexcept { listen = shouldListen; }
     void setAutoRelease (bool shouldAutoRelease) noexcept { detector.setAutoRelease (shouldAutoRelease); }
     void setGainQ (bool shouldCoupleGainToQ) noexcept { gainQEnabled = shouldCoupleGainToQ; }
+    void setSaturation (bool shouldSaturateOnBoost) noexcept { saturationEnabled = shouldSaturateOnBoost; }
 
     bool isListening() const noexcept { return listen; }
     bool isOn() const noexcept { return on; }
@@ -143,6 +158,20 @@ private:
     // (test guarantee #4), not a subtle tweak.
     static constexpr float gainQMinMultiplier = 0.4f;
 
+    // Saturation drive bounds (v0.3.0, docs/voicing-notes.md): at 0 dB of
+    // applied boost, drive sits at saturationDriveFloor - low enough that
+    // std::tanh(x * drive) / drive is very close to identity for ordinary
+    // programme levels (a deliberately gentle "just barely there" floor,
+    // not a hard on/off switch at 0 dB). At saturationGainReferenceDb
+    // (+12 dB, this plugin's own Gain/Range ceiling) drive reaches
+    // saturationDriveCeiling, a clearly audible but still soft-knee-shaped
+    // (not hard-clipped) saturation. Both numbers are this feature's own
+    // engineering judgment, not sourced from a reference plugin - see
+    // docs/voicing-notes.md's honesty section.
+    static constexpr float saturationDriveFloor = 0.3f;
+    static constexpr float saturationDriveCeiling = 2.5f;
+    static constexpr float saturationGainReferenceDb = 12.0f;
+
     bool isEffectivelyShelf() const noexcept { return shelfDirection != ShelfDirection::none && shelfSelected; }
     float effectiveQ() const noexcept { return isEffectivelyShelf() ? fixedShelfQ : q; }
 
@@ -162,6 +191,18 @@ private:
 
     void updateFilterCoefficients (float appliedGainDb, float mainFilterQ) noexcept;
 
+    // Saturation drive (0..saturationDriveCeiling) for a given positive
+    // applied-gain value in dB - see class comment and the bounds above.
+    // `positiveGainDb` must already be > 0 (callers only invoke this while
+    // boosting).
+    float computeSaturationDrive (float positiveGainDb) const noexcept;
+
+    // Applies std::tanh(x * drive) / drive to every sample in `block` in
+    // place - a small-signal-transparent, large-signal-soft-clipping
+    // waveshaper (unity slope at the origin regardless of drive). No
+    // allocation; real-time safe.
+    static void applySaturation (juce::dsp::AudioBlock<float>& block, float drive) noexcept;
+
     ShelfDirection shelfDirection;
 
     using Duplicator = juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>>;
@@ -175,6 +216,7 @@ private:
     bool shelfSelected = false;
     bool listen = false;
     bool gainQEnabled = false;
+    bool saturationEnabled = false;
 
     float frequencyHz = 1000.0f;
     float q = 1.0f;

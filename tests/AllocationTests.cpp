@@ -12,14 +12,19 @@
 // deep-dive pass (docs/design-brief.md). Neither pluginval nor auval do
 // allocation-instrumented profiling, and this repo had no allocation-
 // counting mechanism before v0.2.0, so this test file establishes the
-// baseline AND extends coverage to the two new v0.2.0 code paths
+// baseline AND extends coverage to the v0.2.0/v0.3.0 code paths
 // specifically: Detector's auto-release measurement/second envelope
-// (Detector.cpp) and DynamicBand's gain/Q-coupled Q recompute
-// (DynamicBand.cpp's computeMainFilterQ()) - both are on the per-sub-block
-// hot path once their respective toggle is enabled, and both were written
-// using only stack-allocated arithmetic (no juce::dsp::IIR::Coefficients::
-// make*() allocating calls, no containers), which this test verifies
-// end-to-end rather than by code inspection alone.
+// (Detector.cpp), DynamicBand's gain/Q-coupled Q recompute
+// (DynamicBand.cpp's computeMainFilterQ()), and (v0.3.0,
+// docs/voicing-notes.md) DynamicBand's saturation waveshaper
+// (computeSaturationDrive()/applySaturation(), std::tanh only, no
+// allocation) - all three are on the per-sub-block hot path once their
+// respective toggle is enabled, and all were written using only
+// stack-allocated arithmetic (no juce::dsp::IIR::Coefficients::make*()
+// allocating calls, no containers), which this test verifies end-to-end
+// rather than by code inspection alone. Range is kept positive (boosting)
+// here specifically so the saturation branch (only taken while a band is
+// actively boosting) actually runs, not just AutoRelease/GainQ's own paths.
 namespace
 {
     void setParam (LancetAudioProcessor& processor, const char* id, float realValue)
@@ -38,7 +43,7 @@ namespace
 }
 
 TEST_CASE ("LancetAudioProcessor::processBlock allocates no memory with every band engaged and "
-           "AutoRelease/GainQ on, while parameters keep moving",
+           "AutoRelease/GainQ/Saturation on, while parameters keep moving",
            "[dsp][rt-safety][alloc]")
 {
     LancetAudioProcessor processor;
@@ -56,12 +61,15 @@ TEST_CASE ("LancetAudioProcessor::processBlock allocates no memory with every ba
         setParam (processor, (prefix + "freq").toRawUTF8(), 1000.0f);
         setParam (processor, (prefix + "q").toRawUTF8(), 1.0f);
         setParam (processor, (prefix + "gain").toRawUTF8(), 0.0f);
-        setParam (processor, (prefix + "range").toRawUTF8(), -9.0f);
+        // Positive (boosting) Range - required so DynamicBand's saturation
+        // branch (only taken while appliedGainDb > 0) actually runs below.
+        setParam (processor, (prefix + "range").toRawUTF8(), 9.0f);
         setParam (processor, (prefix + "thresh").toRawUTF8(), -30.0f);
         setParam (processor, (prefix + "attack").toRawUTF8(), 3.0f);
         setParam (processor, (prefix + "release").toRawUTF8(), 120.0f);
         setParamNormalised (processor, (prefix + "autoRelease").toRawUTF8(), 1.0f);
         setParamNormalised (processor, (prefix + "gainQ").toRawUTF8(), 1.0f);
+        setParamNormalised (processor, (prefix + "sat").toRawUTF8(), 1.0f);
     }
 
     // Resolve every parameter pointer touched inside the guarded loop below
@@ -127,7 +135,7 @@ TEST_CASE ("LancetAudioProcessor::processBlock allocates no memory with every ba
     CHECK (guard.count() == 0);
 }
 
-TEST_CASE ("LancetEngine::process allocates no memory across repeated blocks with AutoRelease/GainQ on",
+TEST_CASE ("LancetEngine::process allocates no memory across repeated blocks with AutoRelease/GainQ/Saturation on",
            "[dsp][engine][rt-safety][alloc]")
 {
     // Isolated from PluginProcessor/APVTS so this attributes any regression
@@ -148,12 +156,15 @@ TEST_CASE ("LancetEngine::process allocates no memory across repeated blocks wit
         engine.setBandFrequencyHz (band, 1000.0f);
         engine.setBandQ (band, 1.0f);
         engine.setBandGainDb (band, 0.0f);
-        engine.setBandRangeDb (band, -9.0f);
+        // Positive (boosting) Range - required so DynamicBand's saturation
+        // branch (only taken while appliedGainDb > 0) actually runs below.
+        engine.setBandRangeDb (band, 9.0f);
         engine.setBandThresholdDb (band, -30.0f);
         engine.setBandAttackMs (band, 3.0f);
         engine.setBandReleaseMs (band, 120.0f);
         engine.setBandAutoRelease (band, true);
         engine.setBandGainQ (band, true);
+        engine.setBandSaturation (band, true);
     }
 
     juce::AudioBuffer<float> buffer (2, 512);

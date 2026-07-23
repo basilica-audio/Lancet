@@ -6,11 +6,15 @@
 
 // Guarantee #6 (docs/design-brief.md §4): "Tolerant state import test" - a
 // serialized v0.1.0 AudioProcessorValueTreeState XML (all current v0.1.0
-// bN_* IDs, none of the v2-new bN_autoRelease/bN_gainQ IDs) loads into
-// v0.2.0 without error, with the two new per-band IDs populated at their
-// v0.2.0 defaults (off) and all pre-existing IDs' values preserved exactly,
-// including Attack/Release values that now sit well inside the widened
-// ranges (no clamping needed since the v1 range was a strict subset).
+// bN_* IDs, none of the v2-new bN_autoRelease/bN_gainQ IDs, and none of
+// v0.3.0's bN_sat either) loads into the current version without error, with
+// every new per-band ID populated at its own default (off) and all
+// pre-existing IDs' values preserved exactly, including Attack/Release
+// values that now sit well inside the widened ranges (no clamping needed
+// since the v1 range was a strict subset). v0.3.0 (docs/voicing-notes.md)
+// only changes ParameterLayout *defaults* (Q/Threshold/Attack/Release now
+// differ per band) and adds the new bN_sat boolean - it renames/removes no
+// existing ID, so this guarantee's shape is unaffected.
 //
 // XML shape (JUCE 8.0.14, AudioProcessorValueTreeState.cpp - each
 // parameter is a <PARAM id="..." value="..."/> child of the root
@@ -161,26 +165,31 @@ TEST_CASE ("Tolerant import: every pre-existing v0.1.0 parameter value is preser
     CHECK (getParam (processor, ParamIDs::b6Gain) == Catch::Approx (1.5f).margin (1.0e-3));
 }
 
-TEST_CASE ("Tolerant import: the two new v0.2.0 per-band IDs (bN_autoRelease/bN_gainQ) populate at their default (off) "
-           "on a freshly-constructed instance loading an old session",
+TEST_CASE ("Tolerant import: the new v0.2.0/v0.3.0 per-band IDs (bN_autoRelease/bN_gainQ/bN_sat) populate at their "
+           "default (off) on a freshly-constructed instance loading an old session",
            "[state][tolerant-import]")
 {
     // Matches the realistic host scenario this guarantee is about: a
-    // freshly instantiated v0.2.0 plugin loading a v0.1.0 session file for
+    // freshly instantiated v0.3.0 plugin loading a v0.1.0 session file for
     // the first time - JUCE's AudioProcessorValueTreeState::replaceState()
     // leaves any parameter ID absent from the loaded tree at whatever value
     // it already had (see updateParameterConnectionsToChildTrees() -
     // there's no automatic "reset to ParameterLayout default" step for
     // unmatched IDs), which is why this must be a *fresh* processor: its
     // construction-time value for these new IDs already IS the declared
-    // default (false), and nothing has touched it since.
+    // default (false), and nothing has touched it since. bN_sat (v0.3.0,
+    // docs/voicing-notes.md) is absent from v010StateXml exactly like
+    // bN_autoRelease/bN_gainQ were, so it exercises the same code path.
     LancetAudioProcessor processor;
     processor.prepareToPlay (48000.0, 512);
 
     static constexpr const char* newBoolIds[] = {
-        ParamIDs::b1AutoRelease, ParamIDs::b1GainQ, ParamIDs::b2AutoRelease, ParamIDs::b2GainQ,
-        ParamIDs::b3AutoRelease, ParamIDs::b3GainQ, ParamIDs::b4AutoRelease, ParamIDs::b4GainQ,
-        ParamIDs::b5AutoRelease, ParamIDs::b5GainQ, ParamIDs::b6AutoRelease, ParamIDs::b6GainQ,
+        ParamIDs::b1AutoRelease, ParamIDs::b1GainQ, ParamIDs::b1Sat,
+        ParamIDs::b2AutoRelease, ParamIDs::b2GainQ, ParamIDs::b2Sat,
+        ParamIDs::b3AutoRelease, ParamIDs::b3GainQ, ParamIDs::b3Sat,
+        ParamIDs::b4AutoRelease, ParamIDs::b4GainQ, ParamIDs::b4Sat,
+        ParamIDs::b5AutoRelease, ParamIDs::b5GainQ, ParamIDs::b5Sat,
+        ParamIDs::b6AutoRelease, ParamIDs::b6GainQ, ParamIDs::b6Sat,
     };
 
     const std::unique_ptr<juce::XmlElement> xml (juce::XmlDocument::parse (v010StateXml));
@@ -198,7 +207,7 @@ TEST_CASE ("Tolerant import: the two new v0.2.0 per-band IDs (bN_autoRelease/bN_
     }
 }
 
-TEST_CASE ("Tolerant import control: a state that DOES include bN_autoRelease/bN_gainQ is read, not ignored",
+TEST_CASE ("Tolerant import control: a state that DOES include bN_autoRelease/bN_gainQ/bN_sat is read, not ignored",
            "[state][tolerant-import]")
 {
     // Complements the "absent -> default" test above: proves the importer
@@ -207,12 +216,13 @@ TEST_CASE ("Tolerant import control: a state that DOES include bN_autoRelease/bN
     LancetAudioProcessor processor;
     processor.prepareToPlay (48000.0, 512);
 
-    constexpr const char* v020StateWithNewIdsXml = R"(<PARAMETERS>
+    constexpr const char* v030StateWithNewIdsXml = R"(<PARAMETERS>
         <PARAM id="b1_autoRelease" value="1.0"/>
         <PARAM id="b1_gainQ" value="1.0"/>
+        <PARAM id="b1_sat" value="1.0"/>
     </PARAMETERS>)";
 
-    const std::unique_ptr<juce::XmlElement> xml (juce::XmlDocument::parse (v020StateWithNewIdsXml));
+    const std::unique_ptr<juce::XmlElement> xml (juce::XmlDocument::parse (v030StateWithNewIdsXml));
     REQUIRE (xml != nullptr);
     juce::MemoryBlock binary;
     processor.copyXmlToBinary (*xml, binary);
@@ -220,9 +230,12 @@ TEST_CASE ("Tolerant import control: a state that DOES include bN_autoRelease/bN
 
     auto* autoRelease = dynamic_cast<juce::AudioParameterBool*> (processor.apvts.getParameter (ParamIDs::b1AutoRelease));
     auto* gainQ = dynamic_cast<juce::AudioParameterBool*> (processor.apvts.getParameter (ParamIDs::b1GainQ));
+    auto* sat = dynamic_cast<juce::AudioParameterBool*> (processor.apvts.getParameter (ParamIDs::b1Sat));
     REQUIRE (autoRelease != nullptr);
     REQUIRE (gainQ != nullptr);
+    REQUIRE (sat != nullptr);
 
     CHECK (autoRelease->get() == true);
     CHECK (gainQ->get() == true);
+    CHECK (sat->get() == true);
 }
