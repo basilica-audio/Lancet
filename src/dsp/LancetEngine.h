@@ -76,6 +76,7 @@ public:
     void setBandListen (int bandIndex, bool listen) noexcept;
     void setBandAutoRelease (int bandIndex, bool autoRelease) noexcept;
     void setBandGainQ (int bandIndex, bool gainQ) noexcept;
+    void setBandSaturation (int bandIndex, bool saturation) noexcept;
 
     // Global trim/mix.
     void setInputTrimDb (float newTrimDb) noexcept;

@@ -83,6 +83,7 @@ private:
         std::atomic<float>* listen = nullptr;
         std::atomic<float>* autoRelease = nullptr;
         std::atomic<float>* gainQ = nullptr;
+        std::atomic<float>* sat = nullptr;
     };
 
     std::array<BandParams, LancetEngine::numBands> bandParams;

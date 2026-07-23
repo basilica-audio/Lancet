@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-07-23
+
+### Added
+
+- **Musical defaults and character pass** (issue #4, `docs/voicing-notes.md`): honestly documented as a mix of measured DSP regression proofs and by-ear/judgment-tuned numbers - see that document's Honesty section for exactly which is which.
+  - **Per-band default Q/Threshold/Attack/Release**, tuned to each band's typical role along the existing frequency ladder (was a flat Q 1.0/Threshold -30 dB/Attack 5 ms/Release 150 ms for every band): Band 1 (100 Hz, boom/sub control) now starts slow and gentle (Attack 25 ms/Release 280 ms); Band 5 (4 kHz, sibilance/harshness) starts fast (Attack 2 ms/Release 70 ms); Bands 2-4 step down progressively; Band 6 (air/fizz recovery shelf) sits close to Band 5. Range stays 0 dB (idle) for every band regardless - nothing moves until a Range is dialed in. The resulting envelope-follower ballistics ordering (not just the numeric defaults) is measured and frozen by `tests/BallisticsDefaultsTests.cpp`.
+  - **Gentle Saturation** (`bN_sat`, new per-band boolean, off by default): a soft `tanh`-based waveshaper applied to a band's own output, but only while the band is actively boosting (static + dynamic gain net positive) - a cutting or idle band is untouched even with Saturation on. Drive scales with how hard the band is boosting. State migration is tolerant (a pre-v0.3.0 session missing `bN_sat` loads with it at its off default). Measured via a correlation-based (FFT-free) distortion proof in `tests/SaturationTests.cpp`: added harmonic energy while boosting with Saturation on, bypass verified while cutting or idle.
+  - **A tenth factory preset, "Analog Warmth Lift"** (`presets/factory/analogWarmthLift.json`): Band 2 gentle low-mid boost demonstrating the new Saturation toggle.
+  - **`docs/voicing-notes.md`**: full reasoning for every change above, an explicit honesty section (the per-band ballistics/Threshold numbers and the saturation drive curve are engineering judgment, not sourced from a reference plugin or a real-material listening session), and a "what remains" section naming the by-ear reference-class comparison issue #4 originally asked for as the clearest open item for a future pass.
+- Catch2 suite grown further: `tests/BallisticsDefaultsTests.cpp` (per-band default value freeze + measured Attack/Release step-response ordering) and `tests/SaturationTests.cpp` (correlation-based distortion proof, boosted-only bypass proof, idle-bypass proof, Gain-ceiling robustness), plus extended coverage of the existing allocation guard, state round-trip, tolerant-import, and randomised-parameter-sweep robustness suites for the new `bN_sat` parameter.
+
+### Changed
+
+- Version bumped to 0.3.0 (`CMakeLists.txt`).
+
 ## [0.2.0] — 2026-07-16
 
 ### Added

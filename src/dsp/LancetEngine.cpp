@@ -130,6 +130,12 @@ void LancetEngine::setBandGainQ (int bandIndex, bool gainQ) noexcept
     bands[static_cast<size_t> (bandIndex)]->setGainQ (gainQ);
 }
 
+void LancetEngine::setBandSaturation (int bandIndex, bool saturation) noexcept
+{
+    jassert (bandIndex >= 0 && bandIndex < numBands);
+    bands[static_cast<size_t> (bandIndex)]->setSaturation (saturation);
+}
+
 void LancetEngine::setInputTrimDb (float newTrimDb) noexcept
 {
     lastInputTrimDb = newTrimDb;

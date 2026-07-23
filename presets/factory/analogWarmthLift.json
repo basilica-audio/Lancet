@@ -1,0 +1,16 @@
+{
+    "format": "basilica-preset-1",
+    "plugin": "com.yvesvogl.lancet",
+    "pluginVersion": "0.3.0",
+    "name": "Analog Warmth Lift",
+    "category": "Character",
+    "parameters": {
+        "b2_on": true,
+        "b2_gain": 2.0,
+        "b2_range": 3.0,
+        "b2_thresh": -30.0,
+        "b2_attack": 15.0,
+        "b2_release": 180.0,
+        "b2_sat": true
+    }
+}

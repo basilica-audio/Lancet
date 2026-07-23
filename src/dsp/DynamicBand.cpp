@@ -67,6 +67,25 @@ float DynamicBand::softKneeOvershoot (float overshootDb, float kneeWidthDb) noex
     return overshootDb;
 }
 
+float DynamicBand::computeSaturationDrive (float positiveGainDb) const noexcept
+{
+    const auto fraction = juce::jlimit (0.0f, 1.0f, positiveGainDb / saturationGainReferenceDb);
+    return juce::jmap (fraction, saturationDriveFloor, saturationDriveCeiling);
+}
+
+void DynamicBand::applySaturation (juce::dsp::AudioBlock<float>& block, float drive) noexcept
+{
+    jassert (drive > 0.0f);
+
+    for (size_t channel = 0; channel < block.getNumChannels(); ++channel)
+    {
+        auto* data = block.getChannelPointer (channel);
+
+        for (size_t sample = 0; sample < block.getNumSamples(); ++sample)
+            data[sample] = std::tanh (data[sample] * drive) / drive;
+    }
+}
+
 void DynamicBand::updateFilterCoefficients (float appliedGainDb, float mainFilterQ) noexcept
 {
     const auto gainFactor = juce::Decibels::decibelsToGain (appliedGainDb);
@@ -163,6 +182,16 @@ void DynamicBand::processSubBlock (juce::dsp::AudioBlock<float> mainSubBlock,
     {
         juce::dsp::ProcessContextReplacing<float> context (mainSubBlock);
         mainFilter.process (context);
+
+        // Gentle, opt-in saturation (v0.3.0, docs/voicing-notes.md) - only
+        // while this band is actively boosting (appliedGainDb > 0), never on
+        // a cut, matching the feature's "boosted bands" scope exactly (see
+        // class comment).
+        if (saturationEnabled && appliedGainDb > 0.0f)
+        {
+            const auto drive = computeSaturationDrive (appliedGainDb);
+            applySaturation (mainSubBlock, drive);
+        }
     }
     // else: true bypass - `mainSubBlock` is left untouched, which is what
     // guarantee #1 (bit-transparent null test) in docs/design-brief.md
