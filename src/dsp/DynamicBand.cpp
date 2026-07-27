@@ -61,11 +61,14 @@ void DynamicBand::prepare (const juce::dsp::ProcessSpec& spec)
 
     reset();
 
-    // Prime the detector's bandpass and the SVF's frequency warp
-    // immediately so the very first processSubBlock() call runs with
-    // correct, non-default values.
-    detector.setAttackMs (5.0f);
-    detector.setReleaseMs (150.0f);
+    // Prime the detector's ballistics, bandpass and the SVF's frequency warp
+    // immediately so the very first processSubBlock() call runs with correct
+    // values. Attack/Release have to be re-pushed here specifically because
+    // their coefficients are derived from the sample rate, which only became
+    // known a few lines ago - and they are re-pushed from this band's own
+    // remembered values, not from a hardcoded pair (see setAttackMs()).
+    detector.setAttackMs (attackMs);
+    detector.setReleaseMs (releaseMs);
     detector.setFrequencyAndQ (frequencyHzSmoothed, qSmoothed);
     detectorCoefficientFrequencyHz = frequencyHzSmoothed;
     detectorCoefficientQ = qSmoothed;

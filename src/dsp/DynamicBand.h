@@ -179,8 +179,23 @@ public:
     void setStaticGainDb (float newGainDb) noexcept { staticGainDb = newGainDb; }
     void setRangeDb (float newRangeDb) noexcept { rangeDb = newRangeDb; }
     void setThresholdDb (float newThresholdDb) noexcept { thresholdDb = newThresholdDb; }
-    void setAttackMs (float newAttackMs) noexcept { detector.setAttackMs (newAttackMs); }
-    void setReleaseMs (float newReleaseMs) noexcept { detector.setReleaseMs (newReleaseMs); }
+    // Attack/Release are remembered here as well as pushed into the Detector
+    // because the Detector derives its coefficients from the sample rate:
+    // prepare() has to re-apply them at the new rate, and it must re-apply
+    // the *current* values rather than a hardcoded pair (which is what every
+    // build up to v0.3.0 did, silently resetting a band's ballistics to
+    // 5 ms/150 ms on every prepare until the next parameter push arrived).
+    void setAttackMs (float newAttackMs) noexcept
+    {
+        attackMs = newAttackMs;
+        detector.setAttackMs (newAttackMs);
+    }
+
+    void setReleaseMs (float newReleaseMs) noexcept
+    {
+        releaseMs = newReleaseMs;
+        detector.setReleaseMs (newReleaseMs);
+    }
     void setListen (bool shouldListen) noexcept { listen = shouldListen; }
     void setAutoRelease (bool shouldAutoRelease) noexcept { detector.setAutoRelease (shouldAutoRelease); }
     void setGainQ (bool shouldCoupleGainToQ) noexcept { gainQEnabled = shouldCoupleGainToQ; }
@@ -330,6 +345,13 @@ private:
     float staticGainDb = 0.0f;
     float rangeDb = 0.0f;
     float thresholdDb = -30.0f;
+
+    // Mirrors of the two Detector ballistics settings, kept so prepare() can
+    // re-derive their sample-rate-dependent coefficients - see setAttackMs().
+    // The initial values are the historical prepare()-time defaults, so a
+    // band that is never told otherwise behaves exactly as before.
+    float attackMs = 5.0f;
+    float releaseMs = 150.0f;
 
     // Smoothed control values (see the class comment for each one's role).
     float staticGainDbSmoothed = 0.0f;
