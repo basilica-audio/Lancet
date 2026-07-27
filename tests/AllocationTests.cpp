@@ -195,3 +195,91 @@ TEST_CASE ("LancetEngine::process allocates no memory across repeated blocks wit
 
     CHECK (guard.count() == 0);
 }
+
+//==============================================================================
+// v0.4.0 (SOTA brief T11): the same guard, extended to everything this
+// release added to the audio thread - the sidechain bus slicing in
+// processBlock (which wraps channel pointers rather than copying, and must
+// not be doing anything cleverer than that), the per-sample SVF coefficient
+// path, the ADAA saturator, and the two new per-band choice parameters being
+// toggled continuously.
+TEST_CASE ("LancetAudioProcessor::processBlock allocates no memory with the sidechain bus active and the "
+           "v0.4.0 detector routing toggling every block",
+           "[dsp][rt-safety][alloc][sidechain]")
+{
+    LancetAudioProcessor processor;
+
+    juce::AudioProcessor::BusesLayout layout;
+    layout.inputBuses.add (juce::AudioChannelSet::stereo());
+    layout.inputBuses.add (juce::AudioChannelSet::stereo());
+    layout.outputBuses.add (juce::AudioChannelSet::stereo());
+    REQUIRE (processor.setBusesLayout (layout));
+
+    processor.prepareToPlay (48000.0, 512);
+
+    for (int band = 1; band <= LancetEngine::numBands; ++band)
+    {
+        const auto prefix = "b" + juce::String (band) + "_";
+        setParamNormalised (processor, (prefix + "on").toRawUTF8(), 1.0f);
+        setParam (processor, (prefix + "freq").toRawUTF8(), 1000.0f);
+        setParam (processor, (prefix + "q").toRawUTF8(), 1.0f);
+        setParam (processor, (prefix + "gain").toRawUTF8(), 0.0f);
+        setParam (processor, (prefix + "range").toRawUTF8(), 9.0f);
+        setParam (processor, (prefix + "thresh").toRawUTF8(), -30.0f);
+        setParam (processor, (prefix + "attack").toRawUTF8(), 3.0f);
+        setParam (processor, (prefix + "release").toRawUTF8(), 120.0f);
+        setParamNormalised (processor, (prefix + "autoRelease").toRawUTF8(), 1.0f);
+        setParamNormalised (processor, (prefix + "gainQ").toRawUTF8(), 1.0f);
+        setParamNormalised (processor, (prefix + "sat").toRawUTF8(), 1.0f);
+        // Both new choices touched once here, outside the guard, so their own
+        // first-use bookkeeping cannot be mistaken for a per-block allocation.
+        setParamNormalised (processor, (prefix + "scSource").toRawUTF8(), 1.0f);
+        setParamNormalised (processor, (prefix + "scMode").toRawUTF8(), 1.0f);
+        setParamNormalised (processor, (prefix + "scSource").toRawUTF8(), 0.0f);
+        setParamNormalised (processor, (prefix + "scMode").toRawUTF8(), 0.0f);
+    }
+
+    // Resolve every pointer used inside the guarded loop up front - building
+    // "b1_scSource" fresh each iteration would allocate in the *test*.
+    std::array<std::array<juce::RangedAudioParameter*, 2>, LancetEngine::numBands> routingParams {};
+
+    for (int band = 1; band <= LancetEngine::numBands; ++band)
+    {
+        const auto prefix = "b" + juce::String (band) + "_";
+        auto& params = routingParams[static_cast<size_t> (band - 1)];
+        params[0] = processor.apvts.getParameter ((prefix + "scSource").toRawUTF8());
+        params[1] = processor.apvts.getParameter ((prefix + "scMode").toRawUTF8());
+
+        for (auto* param : params)
+            REQUIRE (param != nullptr);
+    }
+
+    juce::AudioBuffer<float> buffer (4, 512); // 2 main + 2 sidechain
+    juce::MidiBuffer midi;
+
+    for (int warmup = 0; warmup < 4; ++warmup)
+    {
+        buffer.clear();
+        TestHelpers::fillWithSine (buffer, 48000.0, 1000.0, 0.7f, static_cast<juce::int64> (warmup) * 512);
+        processor.processBlock (buffer, midi);
+    }
+
+    TestAlloc::AllocationGuard guard;
+
+    for (int block = 0; block < 32; ++block)
+    {
+        // Both routing switches flipping every block - the Wide -> Split
+        // transition re-primes the detector bandpass, which is the one v0.4.0
+        // code path that touches filter state outside prepare().
+        for (auto& params : routingParams)
+        {
+            params[0]->setValueNotifyingHost ((block % 2) == 0 ? 1.0f : 0.0f);
+            params[1]->setValueNotifyingHost ((block % 4) < 2 ? 1.0f : 0.0f);
+        }
+
+        TestHelpers::fillWithSine (buffer, 48000.0, 1000.0, 0.7f, static_cast<juce::int64> (block) * 512);
+        processor.processBlock (buffer, midi);
+    }
+
+    CHECK (guard.count() == 0);
+}

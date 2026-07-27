@@ -99,6 +99,7 @@ namespace
             { BinaryData::fastRecoveryDemo_json, BinaryData::fastRecoveryDemo_jsonSize },
             { BinaryData::listenCheck_json, BinaryData::listenCheck_jsonSize },
             { BinaryData::analogWarmthLift_json, BinaryData::analogWarmthLift_jsonSize },
+            { BinaryData::sidechainCarve_json, BinaryData::sidechainCarve_jsonSize },
         };
     }
 }

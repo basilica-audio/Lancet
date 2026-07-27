@@ -39,6 +39,7 @@ namespace
             { BinaryData::fastRecoveryDemo_json, BinaryData::fastRecoveryDemo_jsonSize },
             { BinaryData::listenCheck_json, BinaryData::listenCheck_jsonSize },
             { BinaryData::analogWarmthLift_json, BinaryData::analogWarmthLift_jsonSize },
+            { BinaryData::sidechainCarve_json, BinaryData::sidechainCarve_jsonSize },
         };
     }
 
@@ -258,7 +259,7 @@ TEST_CASE ("PresetManager: every factory preset parses and loads without error",
     const auto all = manager.getAllPresets();
     const auto factoryCount = std::count_if (all.begin(), all.end(), [] (auto& e) { return e.isFactory; });
 
-    REQUIRE (factoryCount == 10); // docs/presets.md's Factory Presets table
+    REQUIRE (factoryCount == 11); // docs/presets.md's Factory Presets table
 
     for (auto& entry : all)
     {
@@ -566,4 +567,75 @@ TEST_CASE ("PresetManager: parameter-driven dirty tracking coexists safely with 
     }
 
     CHECK (manager.isDirty());
+}
+
+//==============================================================================
+// v0.4.0 (SOTA brief §4): the eleventh factory preset, "Sidechain Carve",
+// exists to make the new external-sidechain routing discoverable - a routing
+// feature nobody can find is a feature nobody has. It is also the only shipped
+// preset that sets either of the two new parameters away from index 0, so it
+// doubles as a check that a preset carrying them actually applies them.
+TEST_CASE ("PresetManager: the Sidechain Carve preset ships and applies the v0.4.0 detector routing", "[presets]")
+{
+    LancetAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 512);
+
+    ScopedTestDirectory scratch;
+    PresetManager manager (processor.apvts, makeIsolatedConfig (scratch.dir), makeTestFactoryPresetAssets());
+
+    REQUIRE (manager.loadPreset ("Sidechain Carve"));
+    CHECK (manager.isCurrentPresetFactory());
+
+    auto* scSource = dynamic_cast<juce::AudioParameterChoice*> (processor.apvts.getParameter (ParamIDs::b3ScSource));
+    REQUIRE (scSource != nullptr);
+    CHECK (scSource->getIndex() == 1); // External
+
+    auto* scMode = dynamic_cast<juce::AudioParameterChoice*> (processor.apvts.getParameter (ParamIDs::b3ScMode));
+    REQUIRE (scMode != nullptr);
+    CHECK (scMode->getIndex() == 1); // Wide
+
+    auto* range = processor.apvts.getParameter (ParamIDs::b3Range);
+    REQUIRE (range != nullptr);
+    CHECK (range->convertFrom0to1 (range->getValue()) < 0.0f); // cuts as the sidechain gets loud
+
+    auto* on = processor.apvts.getParameter (ParamIDs::b3On);
+    REQUIRE (on != nullptr);
+    CHECK (on->getValue() > 0.5f);
+}
+
+TEST_CASE ("PresetManager: every other factory preset leaves the v0.4.0 detector routing at its defaults",
+           "[presets]")
+{
+    // The neutrality invariant applied to the shipped presets: the ten presets
+    // that predate v0.4.0 must not have acquired new behaviour just because
+    // new parameters exist. Only Sidechain Carve is allowed to move them.
+    LancetAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 512);
+
+    ScopedTestDirectory scratch;
+    PresetManager manager (processor.apvts, makeIsolatedConfig (scratch.dir), makeTestFactoryPresetAssets());
+
+    static constexpr const char* scIds[] = {
+        ParamIDs::b1ScSource, ParamIDs::b2ScSource, ParamIDs::b3ScSource,
+        ParamIDs::b4ScSource, ParamIDs::b5ScSource, ParamIDs::b6ScSource,
+        ParamIDs::b1ScMode, ParamIDs::b2ScMode, ParamIDs::b3ScMode,
+        ParamIDs::b4ScMode, ParamIDs::b5ScMode, ParamIDs::b6ScMode,
+    };
+
+    for (const auto& entry : manager.getAllPresets())
+    {
+        if (! entry.isFactory || entry.name == "Sidechain Carve")
+            continue;
+
+        CAPTURE (entry.name);
+        REQUIRE (manager.loadPreset (entry.name));
+
+        for (const auto* id : scIds)
+        {
+            CAPTURE (id);
+            auto* param = dynamic_cast<juce::AudioParameterChoice*> (processor.apvts.getParameter (id));
+            REQUIRE (param != nullptr);
+            CHECK (param->getIndex() == 0);
+        }
+    }
 }

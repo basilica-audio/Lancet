@@ -10,7 +10,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS deployment ta
 # here at the top level avoids it being enabled implicitly deeper inside
 # JUCE's CMake helpers, which has been observed to break Ninja's generate
 # step (missing CMAKE_C_COMPILE_OBJECT rule variable).
-project(Lancet VERSION 0.3.0 LANGUAGES C CXX)
+project(Lancet VERSION 0.4.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -76,6 +76,7 @@ juce_add_binary_data(LancetBinaryData SOURCES
     presets/factory/fastRecoveryDemo.json
     presets/factory/listenCheck.json
     presets/factory/analogWarmthLift.json
+    presets/factory/sidechainCarve.json
     resources/i18n/de.txt
 )
 
@@ -148,6 +149,12 @@ target_link_libraries(Tests PRIVATE SharedCode Catch2::Catch2)
 target_compile_definitions(Tests PRIVATE
     $<TARGET_PROPERTY:Lancet,COMPILE_DEFINITIONS>
     JUCE_MODAL_LOOPS_PERMITTED=1
+    # Checked-in state fixtures the migration tests load from disk (v0.4.0,
+    # tests/fixtures/). Passed as a path rather than embedded via BinaryData so
+    # that a fixture stays a plain, reviewable file: the whole point of
+    # tests/fixtures/state-v0.3.0.xml is that a human can read exactly what an
+    # old session looked like.
+    LANCET_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
 )
 
 set_target_properties(Tests PROPERTIES XCODE_GENERATE_SCHEME ON)

@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<PARAMETERS>
+  <PARAM id="in_trim" value="3.5"/>
+
+  <PARAM id="b1_on" value="1"/>
+  <PARAM id="b1_type" value="1"/>
+  <PARAM id="b1_freq" value="180"/>
+  <PARAM id="b1_q" value="0.8"/>
+  <PARAM id="b1_gain" value="-4.5"/>
+  <PARAM id="b1_range" value="-6"/>
+  <PARAM id="b1_thresh" value="-22"/>
+  <PARAM id="b1_attack" value="50"/>
+  <PARAM id="b1_release" value="300"/>
+  <PARAM id="b1_listen" value="0"/>
+  <PARAM id="b1_autoRelease" value="1"/>
+  <PARAM id="b1_gainQ" value="0"/>
+  <PARAM id="b1_sat" value="0"/>
+
+  <PARAM id="b2_on" value="0"/>
+  <PARAM id="b2_freq" value="250"/>
+  <PARAM id="b2_q" value="1.1"/>
+  <PARAM id="b2_gain" value="0"/>
+  <PARAM id="b2_range" value="0"/>
+  <PARAM id="b2_thresh" value="-28"/>
+  <PARAM id="b2_attack" value="15"/>
+  <PARAM id="b2_release" value="180"/>
+  <PARAM id="b2_listen" value="0"/>
+  <PARAM id="b2_autoRelease" value="0"/>
+  <PARAM id="b2_gainQ" value="0"/>
+  <PARAM id="b2_sat" value="0"/>
+
+  <PARAM id="b3_on" value="1"/>
+  <PARAM id="b3_freq" value="2500"/>
+  <PARAM id="b3_q" value="3.2"/>
+  <PARAM id="b3_gain" value="1.5"/>
+  <PARAM id="b3_range" value="-9"/>
+  <PARAM id="b3_thresh" value="-18"/>
+  <PARAM id="b3_attack" value="0.5"/>
+  <PARAM id="b3_release" value="1000"/>
+  <PARAM id="b3_listen" value="0"/>
+  <PARAM id="b3_autoRelease" value="0"/>
+  <PARAM id="b3_gainQ" value="1"/>
+  <PARAM id="b3_sat" value="1"/>
+
+  <PARAM id="b4_on" value="0"/>
+  <PARAM id="b4_freq" value="1600"/>
+  <PARAM id="b4_q" value="1.2"/>
+  <PARAM id="b4_gain" value="0"/>
+  <PARAM id="b4_range" value="0"/>
+  <PARAM id="b4_thresh" value="-24"/>
+  <PARAM id="b4_attack" value="4"/>
+  <PARAM id="b4_release" value="100"/>
+  <PARAM id="b4_listen" value="0"/>
+  <PARAM id="b4_autoRelease" value="0"/>
+  <PARAM id="b4_gainQ" value="0"/>
+  <PARAM id="b4_sat" value="0"/>
+
+  <PARAM id="b5_on" value="1"/>
+  <PARAM id="b5_freq" value="6500"/>
+  <PARAM id="b5_q" value="2"/>
+  <PARAM id="b5_gain" value="0"/>
+  <PARAM id="b5_range" value="-8"/>
+  <PARAM id="b5_thresh" value="-24"/>
+  <PARAM id="b5_attack" value="0.5"/>
+  <PARAM id="b5_release" value="60"/>
+  <PARAM id="b5_listen" value="1"/>
+  <PARAM id="b5_autoRelease" value="1"/>
+  <PARAM id="b5_gainQ" value="0"/>
+  <PARAM id="b5_sat" value="0"/>
+
+  <PARAM id="b6_on" value="1"/>
+  <PARAM id="b6_type" value="1"/>
+  <PARAM id="b6_freq" value="9000"/>
+  <PARAM id="b6_q" value="0.5"/>
+  <PARAM id="b6_gain" value="2.25"/>
+  <PARAM id="b6_range" value="1.5"/>
+  <PARAM id="b6_thresh" value="-20"/>
+  <PARAM id="b6_attack" value="5"/>
+  <PARAM id="b6_release" value="90"/>
+  <PARAM id="b6_listen" value="0"/>
+  <PARAM id="b6_autoRelease" value="0"/>
+  <PARAM id="b6_gainQ" value="0"/>
+  <PARAM id="b6_sat" value="1"/>
+
+  <PARAM id="out_trim" value="-2"/>
+  <PARAM id="mix" value="80"/>
+</PARAMETERS>

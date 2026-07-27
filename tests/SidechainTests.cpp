@@ -219,11 +219,18 @@ TEST_CASE ("Toggling SC Source and SC Mode every 1024 samples for 5 s stays clic
     configureCuttingBand (engine, -30.0f);
     engine.prepare (makeSpec (1, toggleEvery));
 
+    // totalSamples is not a whole number of toggle chunks, so the tail of
+    // this buffer is never written - and juce::AudioBuffer's (channels,
+    // samples) constructor does not zero its allocation, so leaving it would
+    // measure whatever the heap happened to contain.
     juce::AudioBuffer<float> output (1, totalSamples);
+    output.clear();
+
     juce::AudioBuffer<float> main (1, toggleEvery);
     juce::AudioBuffer<float> sidechain (1, toggleEvery);
 
     int toggleCount = 0;
+    int writtenSamples = 0;
 
     for (int position = 0; position + toggleEvery <= totalSamples; position += toggleEvery)
     {
@@ -241,10 +248,16 @@ TEST_CASE ("Toggling SC Source and SC Mode every 1024 samples for 5 s stays clic
         engine.process (mainBlock, sidechainBlock);
 
         output.copyFrom (0, position, main, 0, 0, toggleEvery);
+        writtenSamples = position + toggleEvery;
     }
 
-    REQUIRE (TestHelpers::allSamplesFinite (output));
-    CHECK (TestHelpers::maxSampleToSampleJump (output) < maxAllowedJump);
+    REQUIRE (writtenSamples > 0);
+
+    juce::AudioBuffer<float> written (1, writtenSamples);
+    written.copyFrom (0, 0, output, 0, 0, writtenSamples);
+
+    REQUIRE (TestHelpers::allSamplesFinite (written));
+    CHECK (TestHelpers::maxSampleToSampleJump (written) < maxAllowedJump);
 }
 
 TEST_CASE ("Listen auditions the actual detector feed in every SC Source/Mode combination", "[dsp][sidechain][listen]")
