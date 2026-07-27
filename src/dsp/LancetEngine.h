@@ -59,6 +59,19 @@ public:
     // the prepared capacity rather than causing an out-of-bounds write.
     void process (juce::dsp::AudioBlock<float>& block) noexcept;
 
+    // As above, plus the plugin's optional external sidechain bus (v0.4.0,
+    // SOTA brief F3). Bands whose SC Source is External detect from
+    // `sidechainBlock` instead of the pre-chain tap; every other band is
+    // unaffected. Pass an empty block (or use the single-argument overload)
+    // when the host provides no sidechain - bands set to External then fall
+    // back to the pre-chain tap rather than going silent.
+    //
+    // No delay is inserted anywhere for this: Lancet stays at zero latency,
+    // so the sidechain feed must already be time-aligned by the host, which
+    // is how comparable dynamic EQs behave.
+    void process (juce::dsp::AudioBlock<float>& block,
+                   const juce::dsp::AudioBlock<const float>& sidechainBlock) noexcept;
+
     static constexpr int numBands = 6;
 
     // Per-band parameter setters, in real units (Hz, dB, ms). `bandIndex`
@@ -78,12 +91,28 @@ public:
     void setBandGainQ (int bandIndex, bool gainQ) noexcept;
     void setBandSaturation (int bandIndex, bool saturation) noexcept;
 
+    // v0.4.0 (SOTA brief F3/F4): per-band detector routing. `external`
+    // selects the plugin's optional sidechain bus as the detector source
+    // (falling back to the pre-chain tap when no sidechain is present);
+    // `wide` bypasses the detector's own bandpass so the band follows
+    // full-range programme level instead of just its own slice.
+    void setBandSidechainExternal (int bandIndex, bool external) noexcept;
+    void setBandDetectorWide (int bandIndex, bool wide) noexcept;
+
     // Global trim/mix.
     void setInputTrimDb (float newTrimDb) noexcept;
     void setOutputTrimDb (float newTrimDb) noexcept;
     void setMixPercent (float newMixPercent) noexcept;
 
     const DynamicBand& getBand (int bandIndex) const noexcept { return *bands[static_cast<size_t> (bandIndex)]; }
+
+    // v0.4.0 (SOTA brief F7): the dynamic (detector-driven) gain in dB that
+    // band `bandIndex` applied at the last sample of the most recent block -
+    // negative while cutting, positive while boosting, 0 when idle. Safe to
+    // poll from the message thread (relaxed atomic load), mirroring
+    // DynamicBand::getLastDetectorLevelDb()'s existing role. Feeds the
+    // planned M3 per-band gain-reduction needle; no meter uses it yet.
+    float getLastAppliedDynamicGainDb (int bandIndex) const noexcept;
 
     // Always 0: every filter in this engine (bell/shelf bands, Detector
     // bandpasses) is minimum-phase with no lookahead - see class comment.

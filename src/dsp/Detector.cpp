@@ -62,6 +62,26 @@ void Detector::reset()
     previousSubBlockNumSamplesForAutoRelease = 0;
     haveAutoReleaseReference = false;
     fastEnvelopeLinear = 0.0f;
+
+    // A pending Wide->Split re-prime is satisfied by this full reset, so it
+    // must not fire again on the next sub-block.
+    bandpassNeedsReprime = false;
+}
+
+void Detector::setSplitMode (bool shouldBandpassTheDetectorInput) noexcept
+{
+    if (shouldBandpassTheDetectorInput == splitMode)
+        return;
+
+    splitMode = shouldBandpassTheDetectorInput;
+
+    // Only the Wide -> Split direction needs the bandpass state cleared: it
+    // has not been fed while Wide was engaged, so whatever is still sitting
+    // in its delay elements belongs to whenever Split was last active and
+    // would ring out as a stale transient. See setSplitMode()'s docs in
+    // Detector.h.
+    if (splitMode)
+        bandpassNeedsReprime = true;
 }
 
 void Detector::setFrequencyAndQ (float frequencyHz, float q) noexcept
@@ -89,6 +109,29 @@ float Detector::processSubBlock (const juce::dsp::AudioBlock<const float>& preCh
 {
     if (numSamples == 0)
         return autoReleaseEnabled ? juce::Decibels::gainToDecibels (outputEnvelopeLinear, minusInfinityDb) : lastLevelDb;
+
+    beginSubBlock();
+
+    for (size_t sample = 0; sample < numSamples; ++sample)
+        processSample (preChainBlock, startSample + sample);
+
+    endSubBlock (numSamples);
+
+    return lastLevelDb;
+}
+
+void Detector::beginSubBlock() noexcept
+{
+    if (bandpassNeedsReprime)
+    {
+        for (auto& filter : stage1)
+            filter.reset();
+
+        for (auto& filter : stage2)
+            filter.reset();
+
+        bandpassNeedsReprime = false;
+    }
 
     // Auto-release coefficient derivation (see setAutoRelease()'s docs) -
     // once per sub-block, using ONLY the dedicated fast reference envelope
@@ -140,56 +183,69 @@ float Detector::processSubBlock (const juce::dsp::AudioBlock<const float>& preCh
         haveAutoReleaseReference = true;
     }
 
-    const auto numChannels = juce::jmin (preChainBlock.getNumChannels(), stage1.size());
+}
 
-    for (size_t sample = 0; sample < numSamples; ++sample)
+float Detector::processSample (const juce::dsp::AudioBlock<const float>& source, size_t sampleIndex) noexcept
+{
+    const auto numChannels = juce::jmin (source.getNumChannels(), stage1.size());
+
+    float linkedAbs = 0.0f;
+
+    for (size_t channel = 0; channel < numChannels; ++channel)
     {
-        float linkedAbs = 0.0f;
+        const auto input = source.getSample (static_cast<int> (channel), static_cast<int> (sampleIndex));
 
-        for (size_t channel = 0; channel < numChannels; ++channel)
+        // Split runs the cascaded bandpass so the detector only hears its
+        // own band; Wide skips it entirely and follows the full-range
+        // source (see setSplitMode()). Either way, whatever the envelope
+        // follower actually hears is what lands in the listen buffer, so
+        // the Listen solo always auditions the real detector feed.
+        auto detectorInput = input;
+
+        if (splitMode)
         {
-            const auto input = preChainBlock.getSample (static_cast<int> (channel), static_cast<int> (startSample + sample));
-
-            auto filtered = stage1[channel].processSample (input);
-            filtered = stage2[channel].processSample (filtered);
-
-            listenBuffer.setSample (static_cast<int> (channel), static_cast<int> (startSample + sample), filtered);
-
-            linkedAbs = juce::jmax (linkedAbs, std::abs (filtered));
+            detectorInput = stage1[channel].processSample (input);
+            detectorInput = stage2[channel].processSample (detectorInput);
         }
 
-        // Reference envelope: always updated with the fixed user
-        // attack/release coefficients, byte-for-byte identical to
-        // v0.1.0's only envelope - this is what guarantee #1's
-        // inertness/tolerant-import null test relies on when
-        // autoReleaseEnabled is false, and what the auto-release
-        // measurement above derives its "recent fall rate" from when true.
-        if (linkedAbs > envelopeLinear)
-            envelopeLinear = attackCoefficient * (envelopeLinear - linkedAbs) + linkedAbs;
-        else
-            envelopeLinear = releaseCoefficient * (envelopeLinear - linkedAbs) + linkedAbs;
+        listenBuffer.setSample (static_cast<int> (channel), static_cast<int> (sampleIndex), detectorInput);
 
-        if (autoReleaseEnabled)
-        {
-            if (linkedAbs > outputEnvelopeLinear)
-                outputEnvelopeLinear = attackCoefficient * (outputEnvelopeLinear - linkedAbs) + linkedAbs;
-            else
-                outputEnvelopeLinear = autoReleaseCoefficient * (outputEnvelopeLinear - linkedAbs) + linkedAbs;
-
-            // Fast reference envelope (see class docs): same Attack, but
-            // always the fixed fast release, independent of the user's own
-            // Release-ms - this is what supplies the "recent fall rate"
-            // measurement at the top of the next processSubBlock() call.
-            if (linkedAbs > fastEnvelopeLinear)
-                fastEnvelopeLinear = attackCoefficient * (fastEnvelopeLinear - linkedAbs) + linkedAbs;
-            else
-                fastEnvelopeLinear = fastReleaseCoefficient * (fastEnvelopeLinear - linkedAbs) + linkedAbs;
-        }
+        linkedAbs = juce::jmax (linkedAbs, std::abs (detectorInput));
     }
+
+    // A non-finite source sample (upstream NaN/Inf) must not be able to
+    // poison the envelope permanently - jmax above would propagate a NaN
+    // straight into the recursion below, which never recovers on its own.
+    if (! std::isfinite (linkedAbs))
+        linkedAbs = 0.0f;
+
+    // Reference envelope: always updated with the fixed user
+    // attack/release coefficients, byte-for-byte identical to
+    // v0.1.0's only envelope - this is what guarantee #1's
+    // inertness/tolerant-import null test relies on when
+    // autoReleaseEnabled is false, and what the auto-release
+    // measurement above derives its "recent fall rate" from when true.
+    if (linkedAbs > envelopeLinear)
+        envelopeLinear = attackCoefficient * (envelopeLinear - linkedAbs) + linkedAbs;
+    else
+        envelopeLinear = releaseCoefficient * (envelopeLinear - linkedAbs) + linkedAbs;
 
     if (autoReleaseEnabled)
     {
-        previousSubBlockNumSamplesForAutoRelease = numSamples;
+        if (linkedAbs > outputEnvelopeLinear)
+            outputEnvelopeLinear = attackCoefficient * (outputEnvelopeLinear - linkedAbs) + linkedAbs;
+        else
+            outputEnvelopeLinear = autoReleaseCoefficient * (outputEnvelopeLinear - linkedAbs) + linkedAbs;
+
+        // Fast reference envelope (see class docs): same Attack, but
+        // always the fixed fast release, independent of the user's own
+        // Release-ms - this is what supplies the "recent fall rate"
+        // measurement at the top of the next beginSubBlock() call.
+        if (linkedAbs > fastEnvelopeLinear)
+            fastEnvelopeLinear = attackCoefficient * (fastEnvelopeLinear - linkedAbs) + linkedAbs;
+        else
+            fastEnvelopeLinear = fastReleaseCoefficient * (fastEnvelopeLinear - linkedAbs) + linkedAbs;
+
         lastLevelDb = juce::Decibels::gainToDecibels (outputEnvelopeLinear, minusInfinityDb);
     }
     else
@@ -200,5 +256,14 @@ float Detector::processSubBlock (const juce::dsp::AudioBlock<const float>& preCh
         lastLevelDb = juce::Decibels::gainToDecibels (envelopeLinear, minusInfinityDb);
     }
 
+    // The dB conversion is what v0.4.0 moved inside the sample loop: the
+    // gain computer now runs per sample, so it needs the envelope in dB per
+    // sample, not one settled value per sub-block (SOTA brief F1).
     return lastLevelDb;
+}
+
+void Detector::endSubBlock (size_t numSamples) noexcept
+{
+    if (autoReleaseEnabled)
+        previousSubBlockNumSamplesForAutoRelease = numSamples;
 }

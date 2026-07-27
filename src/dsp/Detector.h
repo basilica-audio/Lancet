@@ -100,10 +100,30 @@ public:
     // tests/AutoReleaseTests.cpp (design-brief guarantee #3).
     void setAutoRelease (bool shouldAutoRelease) noexcept { autoReleaseEnabled = shouldAutoRelease; }
 
+    // Split/Wide detector mode (v0.4.0, SOTA brief F4 - the Waves F6 "SC
+    // Mode" control this mirrors). `true` (the default, and every pre-v0.4.0
+    // build's only behaviour) is Split: the detector hears only its own
+    // band, through the cascaded bandpass documented above. `false` is Wide:
+    // the bandpass is bypassed entirely and the detector hears the full-range
+    // source, so the band's dynamics follow overall programme level rather
+    // than the energy in its own slice - the standard way to make one band
+    // duck against the whole mix.
+    //
+    // Switching Wide -> Split re-primes the bandpass state (it has been
+    // sitting idle and un-fed while in Wide, so resuming from it would
+    // release a stale transient into the envelope). Switching Split -> Wide
+    // needs no special handling: the bandpass simply stops being consulted.
+    // The envelope itself is never reset by a mode change, so the gain
+    // reduction moves continuously rather than jumping.
+    void setSplitMode (bool shouldBandpassTheDetectorInput) noexcept;
+
+    bool isSplitMode() const noexcept { return splitMode; }
+
     // Processes `numSamples` samples (<= the sub-block granularity the
     // caller is using, see DynamicBand::processSubBlock) starting at
     // `startSample` within both `preChainBlock` (read-only input, tapped
-    // pre-chain by the engine) and this detector's own listen/bandpass
+    // pre-chain by the engine, or an external sidechain bus - see
+    // DynamicBand's SC Source) and this detector's own listen/bandpass
     // output buffer (see getListenBuffer()). Runs the cascaded bandpass
     // filter and the linked peak envelope follower sample-by-sample (the
     // envelope needs per-sample ballistics for correct attack/release
@@ -111,11 +131,38 @@ public:
     // caller's sub-block granularity - see setFrequencyAndQ). Returns the
     // envelope level in dBFS after processing this range (-100 dBFS floor).
     //
+    // Equivalent to beginSubBlock() + processSample() per sample +
+    // endSubBlock(); kept as the convenient whole-range entry point for
+    // callers (and tests) that do not need the per-sample level.
+    //
     // Real-time safe: no allocation once prepare() has completed. A
     // zero-sample range is a safe no-op that just returns the last level.
     float processSubBlock (const juce::dsp::AudioBlock<const float>& preChainBlock,
                             size_t startSample,
                             size_t numSamples) noexcept;
+
+    //==========================================================================
+    // Per-sample entry points (v0.4.0, SOTA brief F1). Lancet's band gain is
+    // now evaluated once per sample from this detector's envelope, so the
+    // owning DynamicBand needs the envelope *inside* its own sample loop
+    // rather than one settled value per sub-block. The three calls below are
+    // the same code path processSubBlock() runs, just turned inside out:
+    //
+    //   beginSubBlock();
+    //   for (n) levelDb = processSample (source, startSample + n);
+    //   endSubBlock (numSamples);
+    //
+    // beginSubBlock() performs the once-per-sub-block work (auto-release
+    // coefficient derivation, pending Wide->Split re-prime); endSubBlock()
+    // records the elapsed length the next auto-release measurement needs.
+    void beginSubBlock() noexcept;
+
+    // One sample of bandpass (Split only) + linked envelope follower.
+    // `sampleIndex` indexes both `source` and the listen buffer. Returns the
+    // envelope level in dBFS after this sample.
+    float processSample (const juce::dsp::AudioBlock<const float>& source, size_t sampleIndex) noexcept;
+
+    void endSubBlock (size_t numSamples) noexcept;
 
     float getLastLevelDb() const noexcept { return lastLevelDb; }
 
@@ -160,6 +207,12 @@ private:
     static constexpr float autoReleaseFloorMs = 5.0f;
 
     bool autoReleaseEnabled = false;
+
+    // Split/Wide (see setSplitMode()). `splitMode` defaults to true so a
+    // detector that is never told otherwise behaves exactly like every
+    // pre-v0.4.0 build.
+    bool splitMode = true;
+    bool bandpassNeedsReprime = false;
     float outputEnvelopeLinear = 0.0f;
     float autoReleaseCoefficient = 0.0f;
     float previousReferenceLevelDbForAutoRelease = minusInfinityDb;
