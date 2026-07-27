@@ -26,27 +26,35 @@ namespace
         const char* autoRelease;
         const char* gainQ;
         const char* sat;
+        const char* scSource;
+        const char* scMode;
     };
 
     constexpr std::array<BandIdSet, LancetEngine::numBands> bandIds { {
         { ParamIDs::b1On, ParamIDs::b1Type, ParamIDs::b1Freq, ParamIDs::b1Q, ParamIDs::b1Gain,
           ParamIDs::b1Range, ParamIDs::b1Threshold, ParamIDs::b1Attack, ParamIDs::b1Release, ParamIDs::b1Listen,
-          ParamIDs::b1AutoRelease, ParamIDs::b1GainQ, ParamIDs::b1Sat },
+          ParamIDs::b1AutoRelease, ParamIDs::b1GainQ, ParamIDs::b1Sat,
+          ParamIDs::b1ScSource, ParamIDs::b1ScMode },
         { ParamIDs::b2On, nullptr, ParamIDs::b2Freq, ParamIDs::b2Q, ParamIDs::b2Gain,
           ParamIDs::b2Range, ParamIDs::b2Threshold, ParamIDs::b2Attack, ParamIDs::b2Release, ParamIDs::b2Listen,
-          ParamIDs::b2AutoRelease, ParamIDs::b2GainQ, ParamIDs::b2Sat },
+          ParamIDs::b2AutoRelease, ParamIDs::b2GainQ, ParamIDs::b2Sat,
+          ParamIDs::b2ScSource, ParamIDs::b2ScMode },
         { ParamIDs::b3On, nullptr, ParamIDs::b3Freq, ParamIDs::b3Q, ParamIDs::b3Gain,
           ParamIDs::b3Range, ParamIDs::b3Threshold, ParamIDs::b3Attack, ParamIDs::b3Release, ParamIDs::b3Listen,
-          ParamIDs::b3AutoRelease, ParamIDs::b3GainQ, ParamIDs::b3Sat },
+          ParamIDs::b3AutoRelease, ParamIDs::b3GainQ, ParamIDs::b3Sat,
+          ParamIDs::b3ScSource, ParamIDs::b3ScMode },
         { ParamIDs::b4On, nullptr, ParamIDs::b4Freq, ParamIDs::b4Q, ParamIDs::b4Gain,
           ParamIDs::b4Range, ParamIDs::b4Threshold, ParamIDs::b4Attack, ParamIDs::b4Release, ParamIDs::b4Listen,
-          ParamIDs::b4AutoRelease, ParamIDs::b4GainQ, ParamIDs::b4Sat },
+          ParamIDs::b4AutoRelease, ParamIDs::b4GainQ, ParamIDs::b4Sat,
+          ParamIDs::b4ScSource, ParamIDs::b4ScMode },
         { ParamIDs::b5On, nullptr, ParamIDs::b5Freq, ParamIDs::b5Q, ParamIDs::b5Gain,
           ParamIDs::b5Range, ParamIDs::b5Threshold, ParamIDs::b5Attack, ParamIDs::b5Release, ParamIDs::b5Listen,
-          ParamIDs::b5AutoRelease, ParamIDs::b5GainQ, ParamIDs::b5Sat },
+          ParamIDs::b5AutoRelease, ParamIDs::b5GainQ, ParamIDs::b5Sat,
+          ParamIDs::b5ScSource, ParamIDs::b5ScMode },
         { ParamIDs::b6On, ParamIDs::b6Type, ParamIDs::b6Freq, ParamIDs::b6Q, ParamIDs::b6Gain,
           ParamIDs::b6Range, ParamIDs::b6Threshold, ParamIDs::b6Attack, ParamIDs::b6Release, ParamIDs::b6Listen,
-          ParamIDs::b6AutoRelease, ParamIDs::b6GainQ, ParamIDs::b6Sat },
+          ParamIDs::b6AutoRelease, ParamIDs::b6GainQ, ParamIDs::b6Sat,
+          ParamIDs::b6ScSource, ParamIDs::b6ScMode },
     } };
 
     // The small, Lancet-specific config surface PresetManager needs (see
@@ -91,6 +99,7 @@ namespace
             { BinaryData::fastRecoveryDemo_json, BinaryData::fastRecoveryDemo_jsonSize },
             { BinaryData::listenCheck_json, BinaryData::listenCheck_jsonSize },
             { BinaryData::analogWarmthLift_json, BinaryData::analogWarmthLift_jsonSize },
+            { BinaryData::sidechainCarve_json, BinaryData::sidechainCarve_jsonSize },
         };
     }
 }
@@ -99,7 +108,13 @@ namespace
 LancetAudioProcessor::LancetAudioProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput ("Input", juce::AudioChannelSet::stereo(), true)
-                          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+                          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                          // Optional external sidechain (v0.4.0, SOTA brief F3),
+                          // declared disabled by default: a host that knows
+                          // nothing about it sees exactly the v0.3.0 I/O
+                          // signature, and a user who wants it enables the bus
+                          // explicitly. See isBusesLayoutSupported() below.
+                          .withInput ("Sidechain", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, nullptr, "PARAMETERS", createParameterLayout()),
       presetManager (apvts, makePresetManagerConfig(), makeFactoryPresetAssets())
 {
@@ -121,6 +136,8 @@ LancetAudioProcessor::LancetAudioProcessor()
         params.autoRelease = apvts.getRawParameterValue (ids.autoRelease);
         params.gainQ = apvts.getRawParameterValue (ids.gainQ);
         params.sat = apvts.getRawParameterValue (ids.sat);
+        params.scSource = apvts.getRawParameterValue (ids.scSource);
+        params.scMode = apvts.getRawParameterValue (ids.scMode);
 
         jassert (params.on != nullptr);
         jassert (ids.type == nullptr || params.type != nullptr);
@@ -135,6 +152,8 @@ LancetAudioProcessor::LancetAudioProcessor()
         jassert (params.autoRelease != nullptr);
         jassert (params.gainQ != nullptr);
         jassert (params.sat != nullptr);
+        jassert (params.scSource != nullptr);
+        jassert (params.scMode != nullptr);
     }
 
     inTrimDb = apvts.getRawParameterValue (ParamIDs::inTrim);
@@ -231,6 +250,11 @@ void LancetAudioProcessor::pushParametersToEngine()
         engine.setBandAutoRelease (i, params.autoRelease->load (std::memory_order_relaxed) > 0.5f);
         engine.setBandGainQ (i, params.gainQ->load (std::memory_order_relaxed) > 0.5f);
         engine.setBandSaturation (i, params.sat->load (std::memory_order_relaxed) > 0.5f);
+
+        // Choice index 0 is Internal/Split (the pre-v0.4.0 behaviour); any
+        // index >= 1 is External/Wide.
+        engine.setBandSidechainExternal (i, params.scSource->load (std::memory_order_relaxed) > 0.5f);
+        engine.setBandDetectorWide (i, params.scMode->load (std::memory_order_relaxed) > 0.5f);
     }
 
     engine.setInputTrimDb (inTrimDb->load (std::memory_order_relaxed));
@@ -283,6 +307,19 @@ bool LancetAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) c
     if (mainOut != mainIn)
         return false;
 
+    // The sidechain (input bus 1, v0.4.0) is accepted disabled, mono or
+    // stereo, independently of the main layout - a mono instance may be fed
+    // a stereo sidechain and vice versa, since the detector sums whatever it
+    // is given into one linked envelope anyway. Any other channel set is
+    // rejected rather than silently misinterpreted.
+    if (layouts.inputBuses.size() > 1)
+    {
+        const auto sidechain = layouts.getChannelSet (true, 1);
+
+        if (! sidechain.isDisabled() && sidechain != mono && sidechain != stereo)
+            return false;
+    }
+
     return true;
 }
 
@@ -293,14 +330,51 @@ void LancetAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     const auto totalNumInputChannels = getTotalNumInputChannels();
     const auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // Buses are constrained to in == out (mono or stereo), so this is
-    // normally a no-op, but it's cheap insurance against stray channels.
+    // Buses are constrained to main-in == main-out (mono or stereo), so this
+    // is normally a no-op, but it's cheap insurance against stray channels.
     for (auto channel = totalNumInputChannels; channel < totalNumOutputChannels; ++channel)
         buffer.clear (channel, 0, buffer.getNumSamples());
 
     pushParametersToEngine();
 
-    juce::dsp::AudioBlock<float> block (buffer);
+    // With the sidechain bus enabled, `buffer` carries the main bus's
+    // channels followed by the sidechain's, so the engine must be handed the
+    // main bus's slice specifically rather than the whole buffer. Both
+    // slices are taken by channel offset/count from the block the host
+    // supplied - no copying, no allocation, so this stays real-time safe
+    // (tests/AllocationTests.cpp covers it with the bus active).
+    //
+    // Every count below is clamped against the buffer the host *actually*
+    // handed us rather than against the negotiated layout: a host (or a
+    // test) that passes fewer channels than the layout promised must be
+    // trimmed, not read out of bounds. The main output bus always begins at
+    // channel 0 of the process block.
+    const juce::dsp::AudioBlock<float> fullBlock (buffer);
+    const auto availableChannels = fullBlock.getNumChannels();
+
+    const auto mainChannels = juce::jmin (static_cast<size_t> (juce::jmax (0, getChannelCountOfBus (false, 0))),
+                                           availableChannels);
+
+    if (mainChannels == 0)
+        return;
+
+    auto block = fullBlock.getSubsetChannelBlock (0, mainChannels);
+
+    if (auto* sidechainBus = getBus (true, 1); sidechainBus != nullptr && sidechainBus->isEnabled())
+    {
+        const auto sidechainOffset = static_cast<size_t> (juce::jmax (0, sidechainBus->getChannelIndexInProcessBlockBuffer (0)));
+        const auto sidechainChannels = static_cast<size_t> (juce::jmax (0, sidechainBus->getNumberOfChannels()));
+
+        if (sidechainChannels > 0 && sidechainOffset + sidechainChannels <= availableChannels)
+        {
+            const juce::dsp::AudioBlock<const float> sidechainBlock (
+                fullBlock.getSubsetChannelBlock (sidechainOffset, sidechainChannels));
+
+            engine.process (block, sidechainBlock);
+            return;
+        }
+    }
+
     engine.process (block);
 }
 
@@ -320,6 +394,13 @@ void LancetAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     const auto state = apvts.copyState();
     const std::unique_ptr<juce::XmlElement> xml (state.createXml());
+
+    // Schema stamp (v0.4.0) - see currentStateVersion's docs in
+    // PluginProcessor.h. Written unconditionally, so a session saved by this
+    // build always identifies itself even if the state it was restored from
+    // predated the attribute.
+    xml->setAttribute (stateVersionAttribute, currentStateVersion);
+
     copyXmlToBinary (*xml, destData);
 }
 
@@ -327,8 +408,20 @@ void LancetAudioProcessor::setStateInformation (const void* data, int sizeInByte
 {
     const std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
 
-    if (xmlState != nullptr && xmlState->hasTagName (apvts.state.getType()))
-        apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
+    if (xmlState == nullptr || ! xmlState->hasTagName (apvts.state.getType()))
+        return;
+
+    // An absent attribute means schema 1: every Lancet up to v0.3.0 wrote
+    // its state without one. Both schemas restore through the same tolerant
+    // path - JUCE leaves any parameter absent from the loaded state at its
+    // ParameterLayout default, and every default added since schema 1 is the
+    // pre-existing behaviour - so no value transform is needed yet. The
+    // version is recorded so a future schema that *does* need one has
+    // somewhere to branch (and so tests/StateTests.cpp can prove the round
+    // trip preserves it).
+    loadedStateVersion = xmlState->getIntAttribute (stateVersionAttribute, 1);
+
+    apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
 }
 
 //==============================================================================

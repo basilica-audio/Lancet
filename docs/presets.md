@@ -1,6 +1,6 @@
 # Factory presets
 
-Ten factory presets ship with Lancet v0.3.0, embedded via BinaryData from
+Eleven factory presets ship with Lancet v0.4.0, embedded via BinaryData from
 `presets/factory/*.json` (see `docs/design-brief.md` §5 and
 `docs/voicing-notes.md` for the sourced/measured rationale, and
 `docs/research-notes.md` for the underlying reference-class research). All
@@ -19,10 +19,20 @@ listening-comparison calibrated - see `docs/design-brief.md`'s and
 | **Chest Resonance Tamer** | Vocals | Band 1 Low Shelf at 220 Hz - a common vocal/guitar low-mid boxiness use case adjacent to the documented 450-500 Hz mud band, using the shelf mode already present in v0.1. |
 | **Fast-Recovery Demo** | FX | Diagnostic/onboarding preset (Band 4, auto-release on) - not a mixing preset, but a one-click way to A/B `bN_autoRelease` on transient vs. sustained program material and hear the difference the new toggle makes. |
 | **Listen Check** | Init | `bN_listen` enabled on Band 1, everything else at plain defaults - surfaces the detection-monitoring workflow as a discoverable first preset, same rationale as v0.1's own Listen feature. |
+| **Sidechain Carve** (v0.4.0) | Bus | Band 3 (400 Hz) cutting up to 6 dB, driven by the **external sidechain** in **Wide** mode - the discoverable demonstration of v0.4.0's new detector routing. Route a kick or a lead vocal to Lancet's sidechain input in your host and this band carves room for it out of whatever Lancet is inserted on. Wide mode means the whole sidechain signal triggers it, not just the sidechain's own 400 Hz content, which is what makes it track a full-range source sensibly. With no sidechain routed, it falls back to detecting the main signal and behaves as an ordinary dynamic band. |
 | **Analog Warmth Lift** (v0.3.0) | Character | Band 2 (250 Hz, low-mid body): a modest +2 dB static boost plus a +3 dB upward Range (boosts further as the signal gets loud) with `bN_sat` on - demonstrates the new gentle Saturation stage on a musically ordinary "console warmth" boost, per `docs/voicing-notes.md`. |
 
 The two v0.2.0 per-band booleans (`bN_autoRelease`, `bN_gainQ`) and v0.3.0's
 `bN_sat` are automation/preset-controllable but have no dedicated editor
 control yet - GUI work for them is deliberately deferred to M3 alongside the
 rest of the custom LookAndFeel pass (see `docs/design-brief.md` §7 and this
-repo's `CLAUDE.md`).
+repo's `CLAUDE.md`). v0.4.0's two per-band choices (`bN_scSource`,
+`bN_scMode`) are the exception: they do get editor controls, because a
+sidechain routing that cannot be selected from the editor is not usable at
+all.
+
+Note on the ten pre-v0.4.0 presets: none of their stored values changed in
+v0.4.0, but several of them do sound different, because v0.4.0 fixed the
+Attack path (see `CHANGELOG.md`). Presets whose names promise speed -
+De-Ess Stack, Transient Snare Crack, Fast-Recovery Demo - are the ones this
+is most audible on, and they now behave the way their names always claimed.

@@ -239,3 +239,142 @@ TEST_CASE ("Tolerant import control: a state that DOES include bN_autoRelease/bN
     CHECK (gainQ->get() == true);
     CHECK (sat->get() == true);
 }
+
+//==============================================================================
+// v0.4.0 (SOTA brief §4/T9): the same guarantee as the hand-authored v0.1.0
+// case above, but against a checked-in v0.3.0-shaped state file rather than a
+// string literal - tests/fixtures/state-v0.3.0.xml.
+//
+// Keeping it as a file on disk is deliberate. The claim v0.4.0 has to support
+// is "your existing sessions still load and still sound the same", and the
+// most useful form of that evidence is a plain, readable artefact showing
+// exactly what an old session looked like, which anyone can open and compare
+// against. Every value in it is distinctive (no band sits at its layout
+// default) so "values preserved exactly" cannot pass by coincidence.
+namespace
+{
+    juce::File findStateFixture (const juce::String& fileName)
+    {
+        const juce::File fixture (juce::String (LANCET_TEST_FIXTURES_DIR) + "/" + fileName);
+        return fixture;
+    }
+
+    // Loads a fixture XML into `processor` through the real host entry point.
+    void loadFixture (LancetAudioProcessor& processor, const juce::String& fileName)
+    {
+        const auto fixture = findStateFixture (fileName);
+        REQUIRE (fixture.existsAsFile());
+
+        const std::unique_ptr<juce::XmlElement> xml (juce::XmlDocument::parse (fixture));
+        REQUIRE (xml != nullptr);
+
+        juce::MemoryBlock binary;
+        processor.copyXmlToBinary (*xml, binary);
+        processor.setStateInformation (binary.getData(), static_cast<int> (binary.getSize()));
+    }
+
+    float realValueOf (LancetAudioProcessor& processor, const char* id)
+    {
+        auto* param = processor.apvts.getParameter (id);
+        REQUIRE (param != nullptr);
+        return param->convertFrom0to1 (param->getValue());
+    }
+}
+
+TEST_CASE ("Tolerant import: the checked-in v0.3.0 state fixture loads with every pre-existing value preserved",
+           "[state][migration]")
+{
+    LancetAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 512);
+
+    loadFixture (processor, "state-v0.3.0.xml");
+
+    // Globals.
+    CHECK (realValueOf (processor, ParamIDs::inTrim) == Catch::Approx (3.5f).margin (1.0e-3));
+    CHECK (realValueOf (processor, ParamIDs::outTrim) == Catch::Approx (-2.0f).margin (1.0e-3));
+    CHECK (realValueOf (processor, ParamIDs::mix) == Catch::Approx (80.0f).margin (1.0e-2));
+
+    // Band 1: a Low Shelf with auto-release engaged and slow ballistics.
+    CHECK (realValueOf (processor, ParamIDs::b1Type) == Catch::Approx (1.0f).margin (1.0e-3));
+    CHECK (realValueOf (processor, ParamIDs::b1Freq) == Catch::Approx (180.0f).margin (0.5f));
+    CHECK (realValueOf (processor, ParamIDs::b1Q) == Catch::Approx (0.8f).margin (1.0e-2));
+    CHECK (realValueOf (processor, ParamIDs::b1Gain) == Catch::Approx (-4.5f).margin (1.0e-2));
+    CHECK (realValueOf (processor, ParamIDs::b1Range) == Catch::Approx (-6.0f).margin (1.0e-2));
+    CHECK (realValueOf (processor, ParamIDs::b1Threshold) == Catch::Approx (-22.0f).margin (1.0e-2));
+    CHECK (realValueOf (processor, ParamIDs::b1Attack) == Catch::Approx (50.0f).margin (0.2f));
+    CHECK (realValueOf (processor, ParamIDs::b1Release) == Catch::Approx (300.0f).margin (1.0f));
+
+    // Band 3: the busiest band in the fixture - dynamics, Gain/Q and
+    // Saturation all engaged.
+    CHECK (realValueOf (processor, ParamIDs::b3Freq) == Catch::Approx (2500.0f).margin (5.0f));
+    CHECK (realValueOf (processor, ParamIDs::b3Q) == Catch::Approx (3.2f).margin (1.0e-2));
+    CHECK (realValueOf (processor, ParamIDs::b3Range) == Catch::Approx (-9.0f).margin (1.0e-2));
+    CHECK (realValueOf (processor, ParamIDs::b3Attack) == Catch::Approx (0.5f).margin (1.0e-2));
+    CHECK (realValueOf (processor, ParamIDs::b3Release) == Catch::Approx (1000.0f).margin (5.0f));
+    CHECK (realValueOf (processor, ParamIDs::b3GainQ) > 0.5f);
+    CHECK (realValueOf (processor, ParamIDs::b3Sat) > 0.5f);
+
+    // Band 6: a dynamic High Shelf - the configuration the De-Ess Stack preset
+    // uses, and the one whose gain path v0.4.0 rewrote most.
+    CHECK (realValueOf (processor, ParamIDs::b6Type) == Catch::Approx (1.0f).margin (1.0e-3));
+    CHECK (realValueOf (processor, ParamIDs::b6Freq) == Catch::Approx (9000.0f).margin (20.0f));
+    CHECK (realValueOf (processor, ParamIDs::b6Range) == Catch::Approx (1.5f).margin (1.0e-2));
+    CHECK (realValueOf (processor, ParamIDs::b6Gain) == Catch::Approx (2.25f).margin (1.0e-2));
+
+    // Bools survive too.
+    CHECK (realValueOf (processor, ParamIDs::b5On) > 0.5f);
+    CHECK (realValueOf (processor, ParamIDs::b5Listen) > 0.5f);
+    CHECK (realValueOf (processor, ParamIDs::b5AutoRelease) > 0.5f);
+    CHECK (realValueOf (processor, ParamIDs::b2On) < 0.5f);
+}
+
+TEST_CASE ("Tolerant import: the v0.3.0 fixture leaves all twelve v0.4.0 parameters at their neutral defaults",
+           "[state][migration]")
+{
+    LancetAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 512);
+
+    loadFixture (processor, "state-v0.3.0.xml");
+
+    // Index 0 in both cases: Internal sidechain, Split detection - the only
+    // behaviour a v0.3.0 build ever had. This is what makes the neutrality
+    // claim true for restored sessions.
+    for (const auto* id : { ParamIDs::b1ScSource, ParamIDs::b2ScSource, ParamIDs::b3ScSource,
+                             ParamIDs::b4ScSource, ParamIDs::b5ScSource, ParamIDs::b6ScSource,
+                             ParamIDs::b1ScMode, ParamIDs::b2ScMode, ParamIDs::b3ScMode,
+                             ParamIDs::b4ScMode, ParamIDs::b5ScMode, ParamIDs::b6ScMode })
+    {
+        CAPTURE (id);
+        auto* param = dynamic_cast<juce::AudioParameterChoice*> (processor.apvts.getParameter (id));
+        REQUIRE (param != nullptr);
+        CHECK (param->getIndex() == 0);
+    }
+}
+
+TEST_CASE ("Tolerant import: the v0.3.0 fixture is read as schema 1 and re-saves as schema 2", "[state][migration]")
+{
+    LancetAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 512);
+
+    loadFixture (processor, "state-v0.3.0.xml");
+    CHECK (processor.getLoadedStateVersion() == 1);
+
+    juce::MemoryBlock resaved;
+    processor.getStateInformation (resaved);
+
+    const std::unique_ptr<juce::XmlElement> xml (
+        processor.getXmlFromBinary (resaved.getData(), static_cast<int> (resaved.getSize())));
+
+    REQUIRE (xml != nullptr);
+    CHECK (xml->getIntAttribute (LancetAudioProcessor::stateVersionAttribute)
+           == LancetAudioProcessor::currentStateVersion);
+
+    // The re-saved state must round-trip back to the same values.
+    LancetAudioProcessor reloaded;
+    reloaded.prepareToPlay (48000.0, 512);
+    reloaded.setStateInformation (resaved.getData(), static_cast<int> (resaved.getSize()));
+
+    CHECK (realValueOf (reloaded, ParamIDs::b3Q) == Catch::Approx (3.2f).margin (1.0e-2));
+    CHECK (realValueOf (reloaded, ParamIDs::b6Range) == Catch::Approx (1.5f).margin (1.0e-2));
+    CHECK (reloaded.getLoadedStateVersion() == 2);
+}

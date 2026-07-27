@@ -84,6 +84,11 @@ TEST_CASE ("Mono bus layout is supported and processes without NaN/Inf", "[robus
 
     juce::AudioProcessor::BusesLayout monoLayout;
     monoLayout.inputBuses.add (juce::AudioChannelSet::mono());
+    // Input bus 1 is the optional sidechain added in v0.4.0. setBusesLayout()
+    // requires one entry per declared bus, so it has to be named here even
+    // when it is being left disabled - which is exactly the configuration
+    // this case is about (a host that knows nothing about the sidechain).
+    monoLayout.inputBuses.add (juce::AudioChannelSet::disabled());
     monoLayout.outputBuses.add (juce::AudioChannelSet::mono());
 
     REQUIRE (processor.isBusesLayoutSupported (monoLayout));
@@ -134,6 +139,71 @@ TEST_CASE ("Unsupported multichannel bus layout is rejected", "[robustness][busl
     quadLayout.outputBuses.add (juce::AudioChannelSet::quadraphonic());
 
     CHECK_FALSE (processor.isBusesLayoutSupported (quadLayout));
+}
+
+// v0.4.0 (SOTA brief F3/Risk 2): the sidechain is an *optional* second input
+// bus. Adding a bus changes the plugin's I/O signature, which is the kind of
+// thing hosts re-scan on, so its accepted shapes are pinned explicitly here
+// rather than left to pluginval alone.
+TEST_CASE ("Sidechain bus: disabled, mono and stereo are all accepted, independently of the main layout",
+           "[robustness][buslayout][sidechain]")
+{
+    LancetAudioProcessor processor;
+
+    const auto makeLayout = [] (juce::AudioChannelSet main, juce::AudioChannelSet sidechain)
+    {
+        juce::AudioProcessor::BusesLayout layout;
+        layout.inputBuses.add (main);
+        layout.inputBuses.add (sidechain);
+        layout.outputBuses.add (main);
+        return layout;
+    };
+
+    for (const auto& main : { juce::AudioChannelSet::mono(), juce::AudioChannelSet::stereo() })
+    {
+        for (const auto& sidechain : { juce::AudioChannelSet::disabled(),
+                                        juce::AudioChannelSet::mono(),
+                                        juce::AudioChannelSet::stereo() })
+        {
+            INFO ("main = " << main.getDescription() << ", sidechain = " << sidechain.getDescription());
+            CHECK (processor.isBusesLayoutSupported (makeLayout (main, sidechain)));
+        }
+    }
+
+    // Anything wider than stereo on the sidechain is rejected rather than
+    // silently misinterpreted.
+    CHECK_FALSE (processor.isBusesLayoutSupported (
+        makeLayout (juce::AudioChannelSet::stereo(), juce::AudioChannelSet::quadraphonic())));
+}
+
+TEST_CASE ("Sidechain bus enabled: the main output is still the main bus's own channels, and stays finite",
+           "[robustness][buslayout][sidechain]")
+{
+    LancetAudioProcessor processor;
+
+    juce::AudioProcessor::BusesLayout layout;
+    layout.inputBuses.add (juce::AudioChannelSet::stereo());
+    layout.inputBuses.add (juce::AudioChannelSet::stereo());
+    layout.outputBuses.add (juce::AudioChannelSet::stereo());
+
+    REQUIRE (processor.isBusesLayoutSupported (layout));
+    REQUIRE (processor.setBusesLayout (layout));
+
+    processor.prepareToPlay (48000.0, 256);
+    engageModerateDynamics (processor);
+
+    // 2 main + 2 sidechain channels in one process block, the shape a host
+    // hands an effect with an enabled aux input.
+    juce::AudioBuffer<float> buffer (4, 256);
+    TestHelpers::fillWithSine (buffer, 48000.0, 1000.0, 0.8f);
+
+    juce::MidiBuffer midi;
+
+    for (int block = 0; block < 4; ++block)
+        CHECK_NOTHROW (processor.processBlock (buffer, midi));
+
+    CHECK (TestHelpers::allSamplesFinite (buffer));
+    CHECK (processor.getLatencySamples() == 0);
 }
 
 TEST_CASE ("Long-run processing (many blocks, several seconds of audio) produces no NaN/Inf drift", "[robustness][longrun]")

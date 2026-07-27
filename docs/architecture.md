@@ -5,19 +5,21 @@
 ```mermaid
 flowchart LR
     IN[Input] --> TRIM_IN[Input Trim]
+    SC[Sidechain input<br/>optional, off by default] -.-> SEL{{per-band<br/>SC Source}}
     TRIM_IN --> PRECHAIN[pre-chain tap]
+    PRECHAIN -.-> SEL
     TRIM_IN --> B1[Band 1]
     B1 --> B2[Band 2]
     B2 --> B3[Band 3]
     B3 --> B4[Band 4]
     B4 --> B5[Band 5]
     B5 --> B6[Band 6]
-    PRECHAIN -.-> D1[Detector 1]
-    PRECHAIN -.-> D2[Detector 2]
-    PRECHAIN -.-> D3[Detector 3]
-    PRECHAIN -.-> D4[Detector 4]
-    PRECHAIN -.-> D5[Detector 5]
-    PRECHAIN -.-> D6[Detector 6]
+    SEL -.-> D1[Detector 1]
+    SEL -.-> D2[Detector 2]
+    SEL -.-> D3[Detector 3]
+    SEL -.-> D4[Detector 4]
+    SEL -.-> D5[Detector 5]
+    SEL -.-> D6[Detector 6]
     D1 -.->|dynamic gain| B1
     D2 -.->|dynamic gain| B2
     D3 -.->|dynamic gain| B3
@@ -32,20 +34,82 @@ flowchart LR
 
 Six bands process **serially**, standard parametric-EQ style. Each band's own `Detector` taps the *pre-chain* signal - right after Input Trim, before Band 1 - rather than that band's own evolving, serially-processed input. This means a downstream band's gain move can never perturb an upstream band's detection, a band's own gain move can never feed back into triggering itself, and every band always "sees" an identical, unperturbed detection source. All of this lives in `LancetEngine` (`src/dsp/LancetEngine.{h,cpp}`), which owns six `DynamicBand` instances (`src/dsp/DynamicBand.{h,cpp}`), each owning its own `Detector` (`src/dsp/Detector.{h,cpp}`).
 
+Since v0.4.0 a band may instead take its detection from the plugin's optional external sidechain bus (per-band **SC Source**), and may listen to the whole spectrum rather than just its own region (per-band **SC Mode**) - see "external sidechain and Split/Wide detection" below. Both default to the pre-v0.4.0 routing, and a band set to External falls back to the pre-chain tap whenever the host provides no sidechain.
+
 ## Module map
 
 | Directory | Responsibility |
 |---|---|
-| `src/dsp` | All audio-thread DSP: `RealtimeCoefficients.h` (shared real-time-safe biquad coefficient update helper), `Detector` (cascaded bandpass + linked peak envelope follower), `DynamicBand` (one band's serial filter + gain computer), `LancetEngine` (the full six-band signal chain: input trim, pre-chain tap, six bands, Listen resolution, Mix, output trim). No allocation, locks, or I/O once `prepare()` has run. Independent of `juce::AudioProcessor` so it is directly unit-testable. |
+| `src/dsp` | All audio-thread DSP: `TptSvf.h` (free-standing trapezoidal state-variable filter - bell/low shelf/high shelf, per-sample gain API), `AdaaTanh.h` (antiderivative-antialiased tanh kernel, one state per channel), `RealtimeCoefficients.h` (shared real-time-safe biquad coefficient update helper, used by the Detector's bandpass), `Detector` (cascaded bandpass + linked peak envelope follower, Split/Wide), `DynamicBand` (one band's filter + per-sample gain computer + saturator), `LancetEngine` (the full six-band signal chain: input trim, pre-chain tap, sidechain routing, six bands, Listen resolution, Mix, output trim). No allocation, locks, or I/O once `prepare()` has run. Independent of `juce::AudioProcessor` so it is directly unit-testable. `TptSvf.h` and `AdaaTanh.h` are deliberately free-standing - the planned spectral-suppression module needs the SVF as its filter-bank primitive and should not have to drag the dynamics engine along. |
 | `src/params` | Parameter layout and `AudioProcessorValueTreeState` definitions - parameter IDs (frozen, see `ParameterIds.h`), ranges, defaults. |
 | `src/PluginProcessor.*` | Host plumbing: APVTS construction, `prepareToPlay`/`processBlock`/`reset`, latency reporting, state save/load. Reads APVTS values and pushes them into `LancetEngine` every block; does not implement any DSP itself. |
-| `src/PluginEditor.*` | A simple, functional v0.1 GUI: a top strip of Input Trim/Output Trim/Mix knobs above six per-band columns (Band 1 - Band 6), each with an On/Listen toggle row, a Type combo (Band 1/Band 6 only), and Freq/Q/Gain/Range/Threshold/Attack/Release knobs bound via `SliderAttachment`/`ButtonAttachment`/`ComboBoxAttachment`. A custom vector-drawn GUI (readable control state, per-band gain-reduction needles) is a later milestone (M3). |
+| `src/PluginEditor.*` | A simple, functional v0.1 GUI: a top strip of Input Trim/Output Trim/Mix knobs above six per-band columns (Band 1 - Band 6), each with an On/Listen toggle row, a Type combo (Band 1/Band 6 only), SC Source and SC Mode combos (v0.4.0), and Freq/Q/Gain/Range/Threshold/Attack/Release knobs bound via `SliderAttachment`/`ButtonAttachment`/`ComboBoxAttachment`. Note that `ComboBoxAttachment` binds a selection to a parameter index but does *not* populate the box - every combo has its items added explicitly first. A custom vector-drawn GUI (readable control state, per-band gain-reduction needles) is a later milestone (M3). |
 
 Dependency direction is one-way: `PluginEditor` -> `params` (via attachments) and `PluginProcessor` -> `params` + `dsp`. `src/dsp` has no upward dependency on the processor or UI, which is what keeps `LancetEngine` testable in isolation.
 
-## Per-band filter: real-time-safe coefficient updates
+## Per-band filter: the trapezoidal SVF core (v0.4.0)
 
-Each `DynamicBand` owns a `juce::dsp::ProcessorDuplicator<IIR::Filter<float>, IIR::Coefficients<float>>` (so a single instance covers mono or stereo). `juce::dsp::IIR::Coefficients<float>::makePeakFilter`/`makeLowShelf`/`makeHighShelf` (the usual way to build these) heap-allocate a brand-new `Coefficients` object on every call, which is not real-time safe for a coefficient that is recomputed every sub-block (see below). Instead, `RealtimeCoefficients.h`'s `lnct::applyBiquadCoefficients()` writes a stack-only `juce::dsp::IIR::ArrayCoefficients<float>::makeXxx()` result directly into an already-allocated `Coefficients` object's raw storage, normalised by `a0` - zero heap allocation on the audio thread. Same pattern as sibling plugin twist-your-guts's `src/dsp/RealtimeCoefficients.h`.
+Since v0.4.0 each `DynamicBand` realises its bell/shelf through `lnct::TptSvf`
+(`src/dsp/TptSvf.h`), a topology-preserving-transform (trapezoidal-integration)
+state-variable filter, rather than an RBJ biquad whose coefficients were
+rebuilt once per sub-block.
+
+The reason is the ballistics rework described under "v0.4.0: the per-sample
+gain path" below. A direct-form biquad whose `{b, a}` coefficients jump every
+sample is not a well-defined time-varying filter - its internal state means
+something different after each jump, which is precisely what produces zipper
+noise, and which is why v0.1-v0.3 needed a 50 ms gain smoother in front of it.
+A TPT SVF does not have that problem: its state variables are the two
+integrator outputs, which keep their physical meaning no matter how the
+coefficients move, so the gain can be modulated per sample by a continuous
+control signal without artefact.
+
+**The realised transfer function is identical to the RBJ biquad it replaces.**
+Sketch for the bell, with `s` normalised to `w0` and the SVF outputs
+`LP = 1/(s^2+ks+1)`, `BP = s/(s^2+ks+1)`:
+
+```
+y = x + m1*BP        =>  H(s) = (s^2 + (k+m1)s + 1) / (s^2 + ks + 1)
+k = 1/(Q*A), m1 = k*(A^2-1)  =>  k + m1 = A/Q
+                     =>  H(s) = (s^2 + (A/Q)s + 1) / (s^2 + (1/(A*Q))s + 1)
+```
+
+which is exactly RBJ's peaking-EQ analogue prototype, and the trapezoidal
+(bilinear) map with the pre-warp `g = tan(pi*f0/fs)` is the same bilinear map
+RBJ's `alpha = sin(w0)/(2Q)` encodes, since `g/(1+g^2) == sin(w0)/2`. The two
+shelf forms follow the same argument with `g` additionally scaled by
+`1/sqrt(A)` resp. `sqrt(A)`, which is the frequency scaling in RBJ's shelf
+prototypes. `tests/NullTests.cpp` pins this against an independent
+double-precision RBJ reference (peak residual better than -100 dBFS over 10 s
+of noise per setting, worst-conditioned corner included), and
+`tests/StaticResponseTests.cpp` against the analytic magnitude response to
+±0.05 dB. Existing static EQ settings therefore keep exactly the curve they
+had. Discretisation follows Andrew Simper's Cytomic technical paper, implemented
+from the published equations - no third-party code is vendored.
+
+**Precision:** the integrator state and per-sample update are kept in `double`
+even though the audio interface is `float`. The trapezoidal update contains
+the deliberate cancellation `ic1 = 2*v1 - ic1`, which at low frequencies
+(`g ~ 1e-3` at 20 Hz/48 kHz) and high Q loses several digits in single
+precision - and this filter is modulated per sample, so the error does not
+average out.
+
+**Bit-transparency at 0 dB is now structural rather than special-cased.** At
+`A == 1` every gain-dependent mix scalar is *exactly* zero (bell: `m1 =
+k*(A^2-1)`; low shelf: `m1 = k*(A-1)`, `m2 = A^2-1`; high shelf: `m0 = A^2 = 1`,
+`m1 = k*(1-A)*A`, `m2 = 1-A^2`), so `processSample()` returns its input
+bit-for-bit without any branch. See "The exact-0-dB bypass" below for what
+this replaced.
+
+The Detector's own bandpass is still an RBJ biquad, and still uses the
+real-time-safe coefficient path described next.
+
+## Detector bandpass: real-time-safe coefficient updates
+
+The Detector owns `juce::dsp::IIR::Filter<float>` stages sharing one
+`Coefficients` object. `juce::dsp::IIR::Coefficients<float>::makeBandPass<IIR::Filter<float>, IIR::Coefficients<float>>` (so a single instance covers mono or stereo). `juce::dsp::IIR::Coefficients<float>::makePeakFilter`/`makeLowShelf`/`makeHighShelf` (the usual way to build these) heap-allocates a brand-new `Coefficients` object on every call, which is not real-time safe for a coefficient that can be recomputed every sub-block. Instead, `RealtimeCoefficients.h`'s `lnct::applyBiquadCoefficients()` writes a stack-only `juce::dsp::IIR::ArrayCoefficients<float>::makeXxx()` result directly into an already-allocated `Coefficients` object's raw storage, normalised by `a0` - zero heap allocation on the audio thread. Same pattern as sibling plugin twist-your-guts's `src/dsp/RealtimeCoefficients.h`.
+
+Since v0.4.0 this recompute is additionally **dirty-flagged**: it only runs when the smoothed frequency or Q have actually moved past an epsilon, instead of unconditionally every sub-block. A band whose frequency/Q are not being automated does no trigonometric work at all, and the per-sample SVF scalars are memoised on an exact gain match, so a band sitting at a settled gain recomputes nothing.
 
 **Normalisation detail (`x/x` vs `x*(1/x)`):** the normalisation divides each raw coefficient by `a0` directly (`dest[i] = raw[i] / a0`) rather than precomputing `invA0 = 1/a0` once and multiplying. For a peaking/shelf filter at exactly 0 dB gain, the RBJ cookbook makes `b0` numerically equal to `a0` - IEEE 754 guarantees `x/x == 1.0` exactly for any finite non-zero `x`, but the composition `x * (1/x)` carries no such guarantee (the reciprocal is itself rounded before the multiply, so the product can land one ULP off 1.0). This was a real, measurable difference during M1 test-writing - see "The exact-0-dB bypass" below.
 
@@ -148,24 +212,78 @@ gently-decaying transient does; comparing two different decay rates instead
 isolates "how much natural decay information is in the signal" as the only
 variable, matching guarantee #3's intent.
 
-## The 32-sample sub-block coefficient update, and zipper guard
+## v0.4.0: the per-sample gain path, and what the sub-block still does
 
-Per `docs/design-brief.md`: "Coefficient update per 32-sample sub-block with smoothed gain (no zipper)." `LancetEngine::process()` chunks a full block into `<= 32`-sample sub-blocks and calls each `DynamicBand::processSubBlock()` once per chunk. Within that call:
+Up to v0.3.0 the chain was: run the detector across a 32-sample sub-block, take the level at the end of it, run the gain computer once, push the result into a 50 ms `juce::SmoothedValue`, and bake the ramp's current value into the filter's coefficients for that sub-block. The smoother was what kept the stepped coefficient updates inaudible.
 
-1. The Detector's bandpass coefficients (frequency/Q) are recomputed - cheap, but still not something to interpolate per sample.
-2. The Detector's envelope runs sample-by-sample across the whole sub-block (see above), returning the level at the end of it.
-3. The gain computer above derives `dynamicGainDb`; `totalGainDb = staticGainDb + dynamicGainDb` becomes the new *target* of a `juce::SmoothedValue<float, Linear>` (`gainSmoothed`), ramped over a fixed 50 ms window.
-4. `gainSmoothed.skip(subBlockSize)` advances the ramp by the sub-block's length and returns the value at the new position - this is what actually gets baked into the main filter's coefficients for this sub-block.
+It was also a second set of ballistics sitting *behind* the user's Attack knob. The detector could react in 0.5 ms and the realised gain would still take 50 ms to get there, so every Attack setting faster than about 50 ms produced the same audible result - and the shipped range goes down to 0.1 ms. Most of that range did nothing. `tests/AttackFidelityTests.cpp` is the measurement of the fix.
 
-Because `gainSmoothed` ramps continuously rather than snapping to each new sub-block's target, successive 32-sample coefficient snapshots never jump abruptly - this is the mechanism `tests/ZipperTests.cpp` verifies (guarantee #10): an *abrupt*, full-range parameter automation step (deliberately more adversarial than a host's own fine-grained automation) never produces a sample-to-sample output jump larger than a 3 dB-equivalent bound.
+v0.4.0 evaluates the whole chain per sample:
+
+```
+per sample:  detector envelope -> 20*log10 -> soft-knee gain computer
+             -> Range clamp -> totalGainDb -> TptSvf scalars -> filter
+```
+
+There is no smoother anywhere between the envelope and the filter. **The detector envelope is the smoother** - that is the point, and it is what makes the dialed Attack the only thing shaping how fast a band moves. Bells and shelves both take this path; there is no stepped-gain fallback for any band type, which matters because the shipped De-Ess Stack preset drives Band 6 as a dynamic shelf. `tests/ZipperTests.cpp` covers all three (bell, High Shelf, Low Shelf) under full-Range square-AM pumping.
+
+What is still smoothed, and why:
+
+| Quantity | Smoothing | Why |
+|---|---|---|
+| Static **Gain** knob | 15 ms one-pole, per sample | Host automation of a static value must not step. Not in the dynamics path at all. |
+| **Freq** / **Q** knobs | 20 ms one-pole, per sub-block | The SVF is stable under stepped coefficient updates; this ramp only makes knob moves inaudible. |
+| Gain/Q coupling input | 30 ms one-pole | See below. |
+| Dynamic gain | **none** | The ballistics are the smoother. |
+
+The 32-sample sub-block therefore still exists, but its job shrank: it is now only the granularity at which the frequency/Q ramps advance, the detector's auto-release fall-rate measurement is taken, the Gain/Q coupling is evaluated, and the dirty-flag check for coefficient recompute runs. Nothing about the *gain* is quantised to it any more.
+
+**How "no stepped gain path" is tested.** A stepped implementation does not raise the broad sideband skirt that an amplitude-modulated stimulus legitimately produces - it adds *discrete lines* at the sub-block rate (48 kHz / 32 = 1500 Hz), and it concentrates its sample-to-sample discontinuities on the sub-block boundaries. So `tests/ZipperTests.cpp` asserts that no line at `f0 ± 1500 Hz` stands above its neighbouring sidebands, and that the RMS discontinuity at boundary positions is no larger than everywhere else. An absolute sideband floor would have been the wrong bound: a square-AM stimulus carries roughly -50 dB of its own legitimate sidebands 1500 Hz off the carrier, so such a bound would fail a perfectly clean implementation.
+
+The original guarantee (#10) still holds too: an abrupt, full-range parameter automation step never produces a sample-to-sample output jump larger than a 3 dB-equivalent bound - and it holds more comfortably than before, since a 15 ms per-sample one-pole is smoother than a 50 ms ramp that was only sampled once per 32 samples.
+
+### v0.4.0: Gain/Q coupling smoothing
+
+The coupling (see "v0.2.0: gain/Q coupling" above) used to read the gain computer's decision for the current sub-block directly, so a transient crossing the threshold could swing the realised Q across its whole range - `baseQ` down to `0.4·baseQ` - in a single 32-sample step. At Q 12 that is a 7.2 Q-unit jump in 0.67 ms, i.e. the filter's entire shape changing between one sub-block and the next. It now reads a 30 ms-smoothed copy of the dynamic gain, and `tests/GainQCouplingTests.cpp` measures the realised trajectory through `DynamicBand::getLastAppliedFilterQ()`: never more than 0.5 Q units per sub-block, while still traversing the full span.
+
+### v0.4.0: external sidechain and Split/Wide detection
+
+Two per-band choices, both defaulting to the pre-v0.4.0 behaviour:
+
+- **SC Source** (`bN_scSource`, Internal/External). The processor declares an optional second input bus, disabled by default so a host that ignores it sees the v0.3.0 I/O signature unchanged. `LancetEngine::process()` takes an optional sidechain block and each `DynamicBand` picks its detector source per sub-block. If the host provides no sidechain, a band set to External **falls back to Internal** - never silence, never NaN. The envelope is not reset when the source changes, so switching mid-playback does not click. No alignment delay is inserted anywhere: Lancet stays at zero latency, so the sidechain must be time-aligned by the host, which is how comparable dynamic EQs behave.
+- **SC Mode** (`bN_scMode`, Split/Wide). Split runs the cascaded bandpass; Wide bypasses it entirely so the band follows full-range programme level. Switching Wide → Split re-primes the bandpass (it has been sitting un-fed, so resuming from its stale delay elements would release a transient into the envelope); Split → Wide needs no handling, since the bandpass simply stops being consulted.
+
+`Detector` writes whatever the envelope follower actually hears into its listen buffer, so **Listen automatically follows both switches** - band-passed pre-chain audio in Split, full-range in Wide, the sidechain signal when SC Source is External. That property is free rather than special-cased, which is exactly why the listen buffer is written inside the same loop that feeds the envelope.
+
+### v0.4.0: anti-aliased saturation
+
+`lnct::AdaaTanh` (`src/dsp/AdaaTanh.h`) replaces the memoryless `tanh` in the per-band Saturation stage with a first-order antiderivative-antialiased kernel of the same shape:
+
+```
+y[n] = ( F0(x[n]) - F0(x[n-1]) ) / ( x[n] - x[n-1] )        F0 = ln(cosh)
+```
+
+which is the average of the nonlinearity along the straight line between consecutive samples - equivalent to a one-sample boxcar applied to the continuous-time distortion product before it is sampled, so a harmonic at `f` is attenuated by `|sinc(f/fs)|` before it folds. Two implementation details matter: `ln(cosh(x))` is computed as `|x| + log1p(exp(-2|x|)) - ln(2)` (the naive form overflows above about 700), and the difference quotient falls back to `tanh((x0+x1)/2)` when consecutive samples are too close together to divide by.
+
+**One kernel state per channel, never shared.** `DynamicBand` processes a band's channels in separate passes, so a single shared previous-sample value would make each channel's first difference quotient span the *other* channel's last sample - broadband garbage rather than saturation, and only in stereo. `tests/AliasingTests.cpp` pins this by running distinct L/R tones through a stereo band and requiring each channel to come out bit-identical to the same signal run as mono. The state is also kept current while the stage is bypassed (a cutting or idle band), so engaging saturation mid-stream never starts from a difference quotient spanning a gap.
+
+Honesty: base-rate ADAA1 was chosen because this saturator is gentle (drive ≤ 2.5) and must stay at zero latency, but the research this drew on only ever *measured* an absolute alias floor for ADAA1 at 2x oversampling. No absolute alias tier is claimed anywhere. What is claimed and tested is relative and level-pinned: measured suppression of the dominant 30 kHz → 18 kHz fold at 48 kHz is 13.2 dB at -24 dBFS, 10.0 dB at -12 dBFS and 8.4 dB at -6 dBFS input, against a sinc-derived bound of 6 dB.
+
+### v0.4.0: telemetry
+
+`LancetEngine::getLastAppliedDynamicGainDb(band)` and `getLastAppliedFilterQ(band)` expose what a band actually did on its most recent block, as relaxed atomics written once per sub-block. Both exist for the planned M3 per-band gain-reduction needle; no meter consumes them yet. `tests/EngineTests.cpp` checks the first against the gain reduction actually measurable in the output rather than merely for plausibility - a needle that reads something other than what the audio is doing is worse than no needle.
+
+### v0.4.0: state schema versioning
+
+`getStateInformation()` stamps a `stateVersion="2"` attribute on the exported state root; `setStateInformation()` reads it and treats an absent attribute as schema 1 (everything Lancet wrote up to v0.3.0). Schema 2 carries no value transform, because every parameter added since schema 1 defaults to the behaviour that predates it, so JUCE's own tolerant restore already produces the right result. The stamp exists so that a future schema which *does* need a transform - the planned Range/Q range widening changes host automation-curve mapping, which cannot be done silently - has a reliable way to tell what it is reading. `tests/fixtures/state-v0.3.0.xml` is a checked-in, deliberately human-readable session from before the change.
 
 ## The exact-0-dB bypass
 
-An off band (`On` = false) is a true bypass: `mainSubBlock` is left completely untouched, not merely processed through a 0 dB filter - this is what guarantee #1's null test relies on for an off band.
+An off band (`On` = false) is a true bypass: `mainSubBlock` is left completely untouched, not merely processed through a 0 dB filter - this is what guarantee #1's null test relies on for an off band. A band that is on but idle (`Gain = 0`, `Range = 0`) takes the same path.
 
-An **on** band settled at exactly 0 dB total gain (the common case: `Gain = 0`, `Range = 0`) is *also* bypassed, for a subtler reason discovered while writing `tests/NullTests.cpp`'s "on with Gain=0/Range=0" case. Mathematically, a peaking/shelf filter at exactly 0 dB gain (`A == 1` in the RBJ cookbook) is an exact identity: the normalised `b0` coefficient is exactly `1.0`, and the `{b1, b2}` pair is bit-for-bit equal to the `{a1, a2}` pair (see "Normalisation detail" above). In principle, Transposed Direct Form II's per-sample recursion (`juce::dsp::IIR::Filter`'s structure) should then telescope to an exact `y[n] == x[n]` by induction. In practice, it measurably does not: once the compiler contracts a `multiply` followed by an `add`/`subtract` into a fused-multiply-add instruction (the default behaviour, `-ffp-contract=on`, on the arm64/AVX2 targets this project builds for), that exact bit-for-bit cancellation is no longer guaranteed. Measured deviation for a single band at 0 dB gain was a real (not floor-clamped) **~-100 dB**, compounding to **~-90 dB** across all six bands in series - short of guarantee #1's -120 dBFS bar.
+**Historical note (v0.1-v0.3), kept because it is a genuinely non-obvious trap.** Under the old RBJ biquad core, an on band settled at exactly 0 dB had to be special-cased. Mathematically, a peaking/shelf filter at exactly 0 dB gain (`A == 1` in the cookbook) is an exact identity: the normalised `b0` is exactly `1.0` and the `{b1, b2}` pair is bit-for-bit equal to the `{a1, a2}` pair (see "Normalisation detail" above), so Transposed Direct Form II's per-sample recursion should telescope to `y[n] == x[n]` by induction. In practice it measurably did not: once the compiler contracts a multiply followed by an add into a fused-multiply-add instruction (the default `-ffp-contract=on` behaviour on the arm64/AVX2 targets this project builds for), that exact bit-for-bit cancellation is no longer guaranteed. Measured deviation for a single band at 0 dB gain was a real (not floor-clamped) **~-100 dB**, compounding to **~-90 dB** across all six bands in series - short of guarantee #1's -120 dBFS bar. The fix was to skip the filter entirely at exactly 0 dB rather than fight compiler-dependent FMA contraction, which is fragile and not portable across the macOS/Windows matrix this project ships for.
 
-Rather than fighting compiler-dependent FMA contraction (fragile, and not portable across the macOS/Windows matrix this project ships for), `DynamicBand::processSubBlock()` skips `mainFilter.process()` whenever the smoothed applied gain is exactly `0.0f`, taking the same true-bypass path an off band does. This is safe: the filter's own state was already tracking within that same ~1e-7 relative error of an identity pass-through while running, so freezing it for the (typically brief) duration spent at exactly 0 dB introduces no perceptible discontinuity when gain next moves away from 0 - no worse than the transient any coefficient change already produces elsewhere in this engine.
+Since v0.4.0 the SVF makes that trap structurally impossible: at `A == 1` every gain-dependent mix scalar is *exactly* zero, so `y = m0*x + m1*v1 + m2*v2` reduces to `y = x` with no cancellation left to lose. The bypass survives as a CPU shortcut, and as the guarantee that an idle band does not touch its input at all - no longer as a correctness workaround.
 
 ## Listen (exclusive sidechain solo)
 
@@ -183,7 +301,9 @@ While writing `LancetEngine`-level unit tests (bypassing `LancetAudioProcessor`)
 
 ## Latency
 
-Every filter in this engine - the six bands' bell/shelf filters and their Detectors' cascaded bandpass filters - is a minimum-phase IIR biquad with no lookahead, so `LancetEngine::getLatencySamples()` is a `static constexpr 0`, and `LancetAudioProcessor::prepareToPlay()` reports that via `setLatencySamples(0)`. There is no dry-path delay compensation anywhere in this plugin - see `tests/LatencyTests.cpp`.
+Every filter in this engine - the six bands' trapezoidal SVFs and their Detectors' cascaded bandpass biquads - is minimum-phase with no lookahead, so `LancetEngine::getLatencySamples()` is a `static constexpr 0`, and `LancetAudioProcessor::prepareToPlay()` reports that via `setLatencySamples(0)`. There is no dry-path delay compensation anywhere in this plugin.
+
+v0.4.0 kept it that way deliberately, twice over: the saturation stage uses antiderivative antialiasing rather than an oversampling stage (which would have cost either latency or phase distortion), and the external sidechain carries no alignment delay (the host is responsible for time-aligning it). `tests/LatencyTests.cpp` covers both, including an impulse-response check that the peak really lands on sample 0 rather than merely being reported as such.
 
 ## Real-time safety
 
@@ -197,3 +317,5 @@ Every filter in this engine - the six bands' bell/shelf filters and their Detect
 ## Out of scope for M1
 
 Per `docs/design-brief.md`: spectrum analyzer display, external sidechain, M/S per band, lookahead, oversampling, and the photoreal GUI (M3 - v0.1 ships the standard slider/toggle/combo editor described above).
+
+**External sidechain landed in v0.4.0** (see above). Still out of scope, and now tracked for a later release: per-band M/S and L/R placement with stereo unlink, HF de-cramping ("analog-matched" bells) as an opt-in global mode, widening the Range/Q/Release parameter ranges (which needs its own state-migration story, since remapping an existing `NormalisableRange` changes host automation-curve mapping), spectral resonance suppression as an opt-in module reusing `TptSvf` as its filter-bank primitive, lookahead, per-band ratio, linear phase, more than six bands, and the analyzer/EQ-curve UI.

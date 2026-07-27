@@ -1,8 +1,12 @@
 #pragma once
 
 #include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_dsp/juce_dsp.h>
 
+#include <algorithm>
 #include <cmath>
+#include <complex>
+#include <vector>
 
 // Small shared helpers used across the Tests target. Kept dependency-free
 // (just juce_audio_basics) so it can be included from any test file.
@@ -122,6 +126,151 @@ namespace TestHelpers
         }
 
         return maxJump;
+    }
+
+    //==========================================================================
+    // Spectral measurement helpers (v0.4.0). Added for the SOTA brief's
+    // measurable-DSP test plan: the aliasing, zipper-sideband and static-null
+    // assertions all need real spectral numbers rather than RMS ratios.
+
+    // Complex amplitude of `frequencyHz` in one channel over
+    // [startSample, startSample + numSamples), by direct correlation with a
+    // unit sin/cos pair. Exact (no leakage, no window needed) whenever the
+    // measured range covers a whole number of periods of `frequencyHz`,
+    // which every caller here arranges deliberately; that is the whole
+    // reason for using this rather than a windowed FFT bin.
+    inline std::complex<double> toneAmplitude (const juce::AudioBuffer<float>& buffer,
+                                                int channel,
+                                                int startSample,
+                                                int numSamples,
+                                                double frequencyHz,
+                                                double sampleRate)
+    {
+        const auto* data = buffer.getReadPointer (channel);
+
+        double real = 0.0;
+        double imaginary = 0.0;
+
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const auto phase = juce::MathConstants<double>::twoPi * frequencyHz
+                                * static_cast<double> (startSample + i) / sampleRate;
+            const auto value = static_cast<double> (data[startSample + i]);
+
+            real += value * std::cos (phase);
+            imaginary -= value * std::sin (phase);
+        }
+
+        const auto scale = 2.0 / static_cast<double> (numSamples);
+        return { real * scale, imaginary * scale };
+    }
+
+    // Mean square (i.e. power) of one channel over a range.
+    inline double meanSquare (const juce::AudioBuffer<float>& buffer, int channel, int startSample, int numSamples)
+    {
+        const auto* data = buffer.getReadPointer (channel);
+
+        double sum = 0.0;
+
+        for (int i = 0; i < numSamples; ++i)
+            sum += static_cast<double> (data[startSample + i]) * static_cast<double> (data[startSample + i]);
+
+        return numSamples > 0 ? sum / static_cast<double> (numSamples) : 0.0;
+    }
+
+    // Power carried by a pure tone of the given complex amplitude.
+    inline double tonePower (const std::complex<double>& amplitude)
+    {
+        return 0.5 * std::norm (amplitude);
+    }
+
+    // Hann-windowed magnitude spectrum (linear, one-sided) of one channel,
+    // `fftOrder` samples starting at `startSample`. Used where a whole
+    // spectrum is needed rather than a handful of known frequencies - e.g.
+    // deciding whether a discrete line stands above a smooth skirt.
+    inline std::vector<float> magnitudeSpectrum (const juce::AudioBuffer<float>& buffer,
+                                                  int channel,
+                                                  int startSample,
+                                                  int fftOrder)
+    {
+        const auto fftSize = 1 << fftOrder;
+        jassert (startSample + fftSize <= buffer.getNumSamples());
+
+        juce::dsp::FFT fft (fftOrder);
+        juce::dsp::WindowingFunction<float> window (static_cast<size_t> (fftSize),
+                                                     juce::dsp::WindowingFunction<float>::hann);
+
+        std::vector<float> scratch (static_cast<size_t> (fftSize) * 2, 0.0f);
+        const auto* data = buffer.getReadPointer (channel);
+
+        for (int i = 0; i < fftSize; ++i)
+            scratch[static_cast<size_t> (i)] = data[startSample + i];
+
+        window.multiplyWithWindowingTable (scratch.data(), static_cast<size_t> (fftSize));
+        fft.performFrequencyOnlyForwardTransform (scratch.data());
+
+        scratch.resize (static_cast<size_t> (fftSize / 2));
+        return scratch;
+    }
+
+    // Largest magnitude over [firstBin, lastBin], skipping any bin within
+    // `excludeRadius` of `excludeBin`.
+    //
+    // This is the reference a suspected artefact line has to be compared
+    // against, and it is deliberately a peak rather than a mean or median:
+    // the surrounding spectrum is generally not a smooth floor but a comb
+    // (an amplitude-modulated carrier's sidebands sit on discrete lines with
+    // gaps between them), so a median would sample the gaps and make every
+    // ordinary sideband look like an artefact standing above it. Comparing a
+    // line against the peaks of its neighbours asks the right question: does
+    // *this* line stand out from the structure it sits in?
+    inline double peakMagnitudeExcluding (const std::vector<float>& spectrum,
+                                           int firstBin,
+                                           int lastBin,
+                                           int excludeBin,
+                                           int excludeRadius)
+    {
+        double peak = 0.0;
+
+        for (int bin = firstBin; bin <= lastBin; ++bin)
+        {
+            if (bin < 0 || bin >= static_cast<int> (spectrum.size()))
+                continue;
+
+            if (std::abs (bin - excludeBin) <= excludeRadius)
+                continue;
+
+            peak = std::max (peak, static_cast<double> (spectrum[static_cast<size_t> (bin)]));
+        }
+
+        return peak;
+    }
+
+    // Root-mean-square of the sample-to-sample differences at the sample
+    // positions selected by `selectPosition`. Comparing the value at
+    // sub-block boundaries with the value everywhere else is a direct test
+    // for a stepped (per-sub-block) gain path: a stepped implementation
+    // concentrates its discontinuities on the boundaries, a per-sample one
+    // spreads them evenly.
+    template <typename PositionPredicate>
+    double jumpRms (const juce::AudioBuffer<float>& buffer, int channel, int startSample, PositionPredicate selectPosition)
+    {
+        const auto* data = buffer.getReadPointer (channel);
+
+        double sum = 0.0;
+        int counted = 0;
+
+        for (int i = juce::jmax (1, startSample); i < buffer.getNumSamples(); ++i)
+        {
+            if (! selectPosition (i))
+                continue;
+
+            const auto difference = static_cast<double> (data[i]) - static_cast<double> (data[i - 1]);
+            sum += difference * difference;
+            ++counted;
+        }
+
+        return counted > 0 ? std::sqrt (sum / static_cast<double> (counted)) : 0.0;
     }
 
     // Analytic RBJ "Audio EQ Cookbook" peaking-EQ magnitude response in dB,

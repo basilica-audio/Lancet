@@ -17,10 +17,14 @@ class LancetAudioProcessor;
 // (Bell/Shelf - Band 1 and Band 6 only, per docs/design-brief.md), and
 // Freq/Q/Gain/Range/Threshold/Attack/Release knobs bound via
 // SliderAttachment/ButtonAttachment/ComboBoxAttachment. The two new v0.2.0
-// per-band booleans (`bN_autoRelease`/`bN_gainQ`) have no dedicated control
-// yet - deliberately deferred to M3 alongside the rest of the custom
-// LookAndFeel pass (see docs/design-brief.md §7); they remain fully
-// automation/preset-controllable in the meantime. A custom vector-drawn GUI
+// per-band booleans (`bN_autoRelease`/`bN_gainQ`) and v0.3.0's `bN_sat`
+// have no dedicated control yet - deliberately deferred to M3 alongside the
+// rest of the custom LookAndFeel pass (see docs/design-brief.md §7); they
+// remain fully automation/preset-controllable in the meantime. v0.4.0's two
+// per-band detector-routing choices (`bN_scSource`/`bN_scMode`) DO get
+// controls, because a sidechain routing that cannot be selected from the
+// editor is not usable at all - two combo boxes per column, no layout
+// redesign. A custom vector-drawn GUI
 // (readable control state, gain-reduction needles) is a later milestone
 // (M3, see CLAUDE.md); this is deliberately plain but fully wired and
 // usable.
@@ -58,6 +62,17 @@ private:
         juce::ComboBox typeBox; // only used/visible for Band 1 (LowShelf) and Band 6 (HighShelf)
         std::unique_ptr<ComboBoxAttachment> typeAttachment;
         bool hasType = false;
+
+        // v0.4.0 (SOTA brief F3/F4): SC Source (Internal/External) and SC
+        // Mode (Split/Wide), appended to the existing band strip in the
+        // current style. juce::AudioProcessorValueTreeState::ComboBoxAttachment
+        // does NOT populate a box's items - it only binds a selection to a
+        // parameter index - so both boxes have their items added explicitly
+        // before the attachment is constructed (see configureBand()).
+        juce::ComboBox scSourceBox;
+        std::unique_ptr<ComboBoxAttachment> scSourceAttachment;
+        juce::ComboBox scModeBox;
+        std::unique_ptr<ComboBoxAttachment> scModeAttachment;
 
         Knob freq;
         Knob q;

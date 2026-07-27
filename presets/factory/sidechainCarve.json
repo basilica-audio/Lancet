@@ -1,0 +1,19 @@
+{
+    "format": "basilica-preset-1",
+    "plugin": "com.yvesvogl.lancet",
+    "pluginVersion": "0.4.0",
+    "name": "Sidechain Carve",
+    "category": "Bus",
+    "parameters": {
+        "b3_on": true,
+        "b3_freq": 400.0,
+        "b3_q": 0.9,
+        "b3_gain": 0.0,
+        "b3_range": -6.0,
+        "b3_thresh": -26.0,
+        "b3_attack": 8.0,
+        "b3_release": 160.0,
+        "b3_scSource": 1,
+        "b3_scMode": 1
+    }
+}

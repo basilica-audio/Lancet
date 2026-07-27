@@ -4,6 +4,9 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
+#include <limits>
+
 // Guarantee #3 (docs/design-brief.md): "sine at band centre, level stepped
 // above threshold -> measured band gain approaches range (+-1 dB) after 5x
 // release time; below threshold -> static."
@@ -124,4 +127,113 @@ TEST_CASE ("Dynamic behaviour: level stepped above threshold converges to Range 
 
     const auto measuredGainDb = measureTailGainDb (aboveReference, aboveProcessed, static_cast<int> (0.05 * testSampleRate));
     CHECK (measuredGainDb == Catch::Approx (static_cast<double> (rangeDb)).margin (1.0));
+}
+
+//==============================================================================
+// v0.4.0 (SOTA brief T4): the Range clamp, measured on the band's own applied
+// dynamic gain rather than inferred from a spectrum. Range is the promise that
+// a band can never move further than the depth the user dialed in, no matter
+// how far over threshold the programme goes - so the stimulus below sits
+// 40 dB over threshold, far past anything the knee could still be shaping.
+namespace
+{
+    // Settled magnitude of the band's applied dynamic gain, in dB, for a tone
+    // driven `overshootDb` above threshold.
+    float measureSettledGrMagnitudeDb (float bandRangeDb, float overshootDb)
+    {
+        constexpr int blockSamples = 512;
+        constexpr float amplitude = 0.5f;
+
+        const auto toneDbfs = juce::Decibels::gainToDecibels (amplitude);
+
+        LancetEngine engine;
+        engine.setBandOn (2, true);
+        engine.setBandFrequencyHz (2, static_cast<float> (centreFrequencyHz));
+        engine.setBandQ (2, 1.0f);
+        engine.setBandGainDb (2, 0.0f);
+        engine.setBandRangeDb (2, bandRangeDb);
+        engine.setBandThresholdDb (2, toneDbfs - overshootDb);
+        engine.setBandAttackMs (2, 1.0f);
+        engine.setBandReleaseMs (2, 30.0f);
+        engine.setInputTrimDb (0.0f);
+        engine.setOutputTrimDb (0.0f);
+        engine.setMixPercent (100.0f);
+
+        juce::dsp::ProcessSpec spec;
+        spec.sampleRate = testSampleRate;
+        spec.maximumBlockSize = static_cast<juce::uint32> (blockSamples);
+        spec.numChannels = 1;
+        engine.prepare (spec);
+
+        juce::AudioBuffer<float> buffer (1, blockSamples);
+
+        for (int block = 0; block < 60; ++block)
+        {
+            TestHelpers::fillWithSine (buffer, testSampleRate, centreFrequencyHz, amplitude,
+                                        static_cast<juce::int64> (block) * blockSamples);
+            juce::dsp::AudioBlock<float> audioBlock (buffer);
+            engine.process (audioBlock);
+        }
+
+        return std::abs (engine.getLastAppliedDynamicGainDb (2));
+    }
+}
+
+TEST_CASE ("Range clamp: 40 dB of overshoot never moves a band further than its dialed Range", "[dsp][dynamic][range]")
+{
+    for (const auto dialedRangeDb : { -6.0f, 6.0f, -12.0f, 12.0f, -3.0f })
+    {
+        const auto measuredDb = measureSettledGrMagnitudeDb (dialedRangeDb, 40.0f);
+
+        INFO ("Range = " << dialedRangeDb << " dB, measured applied dynamic gain magnitude = " << measuredDb << " dB");
+        CHECK (measuredDb >= std::abs (dialedRangeDb) - 0.05f);
+        CHECK (measuredDb <= std::abs (dialedRangeDb) + 0.05f);
+    }
+}
+
+TEST_CASE ("Range clamp: the applied dynamic gain carries the sign of Range", "[dsp][dynamic][range]")
+{
+    constexpr int blockSamples = 512;
+    constexpr float amplitude = 0.5f;
+    const auto toneDbfs = juce::Decibels::gainToDecibels (amplitude);
+
+    const auto measureSigned = [&] (float dialedRangeDb)
+    {
+        LancetEngine engine;
+        engine.setBandOn (2, true);
+        engine.setBandFrequencyHz (2, static_cast<float> (centreFrequencyHz));
+        engine.setBandQ (2, 1.0f);
+        engine.setBandRangeDb (2, dialedRangeDb);
+        engine.setBandThresholdDb (2, toneDbfs - 40.0f);
+        engine.setBandAttackMs (2, 1.0f);
+        engine.setBandReleaseMs (2, 30.0f);
+        engine.setInputTrimDb (0.0f);
+        engine.setOutputTrimDb (0.0f);
+        engine.setMixPercent (100.0f);
+
+        juce::dsp::ProcessSpec spec;
+        spec.sampleRate = testSampleRate;
+        spec.maximumBlockSize = static_cast<juce::uint32> (blockSamples);
+        spec.numChannels = 1;
+        engine.prepare (spec);
+
+        juce::AudioBuffer<float> buffer (1, blockSamples);
+
+        for (int block = 0; block < 60; ++block)
+        {
+            TestHelpers::fillWithSine (buffer, testSampleRate, centreFrequencyHz, amplitude,
+                                        static_cast<juce::int64> (block) * blockSamples);
+            juce::dsp::AudioBlock<float> audioBlock (buffer);
+            engine.process (audioBlock);
+        }
+
+        return engine.getLastAppliedDynamicGainDb (2);
+    };
+
+    CHECK (measureSigned (-8.0f) < 0.0f); // cuts when loud
+    CHECK (measureSigned (8.0f) > 0.0f);  // boosts when loud
+
+    // Range 0 disables the dynamic term entirely - the telemetry must read a
+    // hard zero, not merely a small number.
+    CHECK (std::abs (measureSigned (0.0f)) < std::numeric_limits<float>::min());
 }

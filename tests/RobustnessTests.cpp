@@ -5,6 +5,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <limits>
+#include <vector>
+
+#include <limits>
 #include <random>
 
 // Guarantees #5, #6, #8 (docs/design-brief.md):
@@ -260,5 +263,125 @@ TEST_CASE ("Rapid parameter automation across many blocks produces no NaN/Inf", 
 
         CHECK_NOTHROW (processor.processBlock (buffer, midi));
         CHECK (TestHelpers::allSamplesFinite (buffer));
+    }
+}
+
+//==============================================================================
+// v0.4.0 (SOTA brief T14): the sidechain bus is a second path by which
+// arbitrary host data reaches the DSP, and a detector poisoned by a NaN on it
+// would be indistinguishable from a broken plugin. The per-sample SVF is also
+// a new recursion that a non-finite value could get stuck inside, so both are
+// swept here.
+TEST_CASE ("NaN/Inf on the sidechain bus cannot poison the detector or the band", "[robustness][sidechain]")
+{
+    LancetAudioProcessor processor;
+
+    juce::AudioProcessor::BusesLayout layout;
+    layout.inputBuses.add (juce::AudioChannelSet::stereo());
+    layout.inputBuses.add (juce::AudioChannelSet::stereo());
+    layout.outputBuses.add (juce::AudioChannelSet::stereo());
+    REQUIRE (processor.setBusesLayout (layout));
+
+    processor.prepareToPlay (48000.0, 512);
+
+    const auto setParam = [&processor] (const char* id, float realValue)
+    {
+        auto* param = processor.apvts.getParameter (id);
+        REQUIRE (param != nullptr);
+        param->setValueNotifyingHost (param->convertTo0to1 (realValue));
+    };
+
+    const auto setNormalised = [&processor] (const char* id, float normalised)
+    {
+        auto* param = processor.apvts.getParameter (id);
+        REQUIRE (param != nullptr);
+        param->setValueNotifyingHost (normalised);
+    };
+
+    for (int band = 1; band <= LancetEngine::numBands; ++band)
+    {
+        const auto prefix = "b" + juce::String (band) + "_";
+        setNormalised ((prefix + "on").toRawUTF8(), 1.0f);
+        setParam ((prefix + "range").toRawUTF8(), -9.0f);
+        setParam ((prefix + "thresh").toRawUTF8(), -40.0f);
+        setNormalised ((prefix + "scSource").toRawUTF8(), 1.0f); // External - reads the poisoned bus
+        setNormalised ((prefix + "sat").toRawUTF8(), 1.0f);
+    }
+
+    juce::AudioBuffer<float> buffer (4, 512);
+    juce::MidiBuffer midi;
+
+    // Poison the sidechain channels only; the main input stays clean.
+    for (int block = 0; block < 4; ++block)
+    {
+        buffer.clear();
+        TestHelpers::fillWithSine (buffer, 48000.0, 1000.0, 0.5f, static_cast<juce::int64> (block) * 512);
+
+        for (int channel = 2; channel < 4; ++channel)
+        {
+            auto* data = buffer.getWritePointer (channel);
+
+            for (int i = 0; i < 512; ++i)
+                data[i] = (i % 3 == 0) ? std::numeric_limits<float>::quiet_NaN()
+                                        : (i % 3 == 1 ? std::numeric_limits<float>::infinity() : 0.5f);
+        }
+
+        CHECK_NOTHROW (processor.processBlock (buffer, midi));
+    }
+
+    // Recovery: clean audio in, finite audio out, on the same instance and
+    // without a reset() - the engine has to dig itself out.
+    for (int block = 0; block < 40; ++block)
+    {
+        buffer.clear();
+        TestHelpers::fillWithSine (buffer, 48000.0, 1000.0, 0.5f, static_cast<juce::int64> (block) * 512);
+        processor.processBlock (buffer, midi);
+    }
+
+    juce::AudioBuffer<float> mainOnly (2, 512);
+    mainOnly.copyFrom (0, 0, buffer, 0, 0, 512);
+    mainOnly.copyFrom (1, 0, buffer, 1, 0, 512);
+
+    CHECK (TestHelpers::allSamplesFinite (mainOnly));
+    CHECK (TestHelpers::peakAbsolute (mainOnly) > 0.01f); // not silenced either
+}
+
+TEST_CASE ("Randomised sweeps of every parameter, including the v0.4.0 additions, stay finite", "[robustness]")
+{
+    LancetAudioProcessor processor;
+
+    juce::AudioProcessor::BusesLayout layout;
+    layout.inputBuses.add (juce::AudioChannelSet::stereo());
+    layout.inputBuses.add (juce::AudioChannelSet::stereo());
+    layout.outputBuses.add (juce::AudioChannelSet::stereo());
+    REQUIRE (processor.setBusesLayout (layout));
+
+    processor.prepareToPlay (48000.0, 256);
+
+    std::vector<juce::RangedAudioParameter*> allParams;
+
+    for (auto* param : processor.getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param))
+            allParams.push_back (ranged);
+
+    REQUIRE (allParams.size() == 89);
+
+    juce::Random random (20260726);
+    juce::AudioBuffer<float> buffer (4, 256);
+    juce::MidiBuffer midi;
+
+    for (int block = 0; block < 200; ++block)
+    {
+        for (auto* param : allParams)
+            param->setValueNotifyingHost (random.nextFloat());
+
+        TestHelpers::fillWithSine (buffer, 48000.0, 1000.0, 0.8f, static_cast<juce::int64> (block) * 256);
+        CHECK_NOTHROW (processor.processBlock (buffer, midi));
+
+        juce::AudioBuffer<float> mainOnly (2, 256);
+        mainOnly.copyFrom (0, 0, buffer, 0, 0, 256);
+        mainOnly.copyFrom (1, 0, buffer, 1, 0, 256);
+
+        REQUIRE (TestHelpers::allSamplesFinite (mainOnly));
     }
 }

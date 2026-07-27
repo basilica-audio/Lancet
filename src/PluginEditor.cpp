@@ -21,8 +21,13 @@ namespace
 
     constexpr int editorWidth = margin * 2 + numColumns * knobSize + (numColumns + 1) * margin;
 
+    // Three combo rows per band column since v0.4.0: Type (Band 1/6 only,
+    // but the row is reserved for every column so the knob grid stays
+    // aligned), SC Source, SC Mode.
+    constexpr int numComboRows = 3;
+
     constexpr int editorHeight = margin + presetBarHeight + margin + rowHeight // preset bar + top strip (In Trim/Out Trim/Mix)
-                                  + margin + bandLabelHeight + toggleRowHeight + comboRowHeight
+                                  + margin + bandLabelHeight + toggleRowHeight + numComboRows * comboRowHeight
                                   + numKnobRows * rowHeight + margin;
 
     // String IDs for one band's parameters, mirroring
@@ -39,21 +44,29 @@ namespace
         const char* attack;
         const char* release;
         const char* listen;
+        const char* scSource;
+        const char* scMode;
     };
 
     constexpr std::array<BandIdSet, LancetEngine::numBands> bandIds { {
         { ParamIDs::b1On, ParamIDs::b1Type, ParamIDs::b1Freq, ParamIDs::b1Q, ParamIDs::b1Gain,
-          ParamIDs::b1Range, ParamIDs::b1Threshold, ParamIDs::b1Attack, ParamIDs::b1Release, ParamIDs::b1Listen },
+          ParamIDs::b1Range, ParamIDs::b1Threshold, ParamIDs::b1Attack, ParamIDs::b1Release, ParamIDs::b1Listen,
+          ParamIDs::b1ScSource, ParamIDs::b1ScMode },
         { ParamIDs::b2On, nullptr, ParamIDs::b2Freq, ParamIDs::b2Q, ParamIDs::b2Gain,
-          ParamIDs::b2Range, ParamIDs::b2Threshold, ParamIDs::b2Attack, ParamIDs::b2Release, ParamIDs::b2Listen },
+          ParamIDs::b2Range, ParamIDs::b2Threshold, ParamIDs::b2Attack, ParamIDs::b2Release, ParamIDs::b2Listen,
+          ParamIDs::b2ScSource, ParamIDs::b2ScMode },
         { ParamIDs::b3On, nullptr, ParamIDs::b3Freq, ParamIDs::b3Q, ParamIDs::b3Gain,
-          ParamIDs::b3Range, ParamIDs::b3Threshold, ParamIDs::b3Attack, ParamIDs::b3Release, ParamIDs::b3Listen },
+          ParamIDs::b3Range, ParamIDs::b3Threshold, ParamIDs::b3Attack, ParamIDs::b3Release, ParamIDs::b3Listen,
+          ParamIDs::b3ScSource, ParamIDs::b3ScMode },
         { ParamIDs::b4On, nullptr, ParamIDs::b4Freq, ParamIDs::b4Q, ParamIDs::b4Gain,
-          ParamIDs::b4Range, ParamIDs::b4Threshold, ParamIDs::b4Attack, ParamIDs::b4Release, ParamIDs::b4Listen },
+          ParamIDs::b4Range, ParamIDs::b4Threshold, ParamIDs::b4Attack, ParamIDs::b4Release, ParamIDs::b4Listen,
+          ParamIDs::b4ScSource, ParamIDs::b4ScMode },
         { ParamIDs::b5On, nullptr, ParamIDs::b5Freq, ParamIDs::b5Q, ParamIDs::b5Gain,
-          ParamIDs::b5Range, ParamIDs::b5Threshold, ParamIDs::b5Attack, ParamIDs::b5Release, ParamIDs::b5Listen },
+          ParamIDs::b5Range, ParamIDs::b5Threshold, ParamIDs::b5Attack, ParamIDs::b5Release, ParamIDs::b5Listen,
+          ParamIDs::b5ScSource, ParamIDs::b5ScMode },
         { ParamIDs::b6On, ParamIDs::b6Type, ParamIDs::b6Freq, ParamIDs::b6Q, ParamIDs::b6Gain,
-          ParamIDs::b6Range, ParamIDs::b6Threshold, ParamIDs::b6Attack, ParamIDs::b6Release, ParamIDs::b6Listen },
+          ParamIDs::b6Range, ParamIDs::b6Threshold, ParamIDs::b6Attack, ParamIDs::b6Release, ParamIDs::b6Listen,
+          ParamIDs::b6ScSource, ParamIDs::b6ScMode },
     } };
 
     // M2 i18n frame (.scaffold/specs/preset-system-m2.md): selects German
@@ -159,6 +172,21 @@ void LancetAudioProcessorEditor::configureBand (BandControls& band, int bandInde
         band.typeBox.setVisible (false);
     }
 
+    // ComboBoxAttachment binds a selection to a parameter index but never
+    // fills the box, so the items are added here first, in the same order
+    // as the AudioParameterChoice's own StringArray (see
+    // params/ParameterLayout.cpp) - index 0 is the pre-v0.4.0 behaviour in
+    // both cases.
+    band.scSourceBox.addItem ("Int SC", 1);
+    band.scSourceBox.addItem ("Ext SC", 2);
+    addAndMakeVisible (band.scSourceBox);
+    band.scSourceAttachment = std::make_unique<ComboBoxAttachment> (audioProcessor.apvts, ids.scSource, band.scSourceBox);
+
+    band.scModeBox.addItem ("Split", 1);
+    band.scModeBox.addItem ("Wide", 2);
+    addAndMakeVisible (band.scModeBox);
+    band.scModeAttachment = std::make_unique<ComboBoxAttachment> (audioProcessor.apvts, ids.scMode, band.scModeBox);
+
     configureKnob (band.freq, ids.freq, "Freq");
     configureKnob (band.q, ids.q, "Q");
     configureKnob (band.gain, ids.gain, "Gain");
@@ -200,9 +228,12 @@ void LancetAudioProcessorEditor::resized()
         band.on.button.setBounds (toggleRow.removeFromLeft (half).reduced (margin / 4, 2));
         band.listen.button.setBounds (toggleRow.reduced (margin / 4, 2));
 
-        auto comboRow = column.removeFromTop (comboRowHeight);
+        auto typeRow = column.removeFromTop (comboRowHeight);
         if (band.hasType)
-            band.typeBox.setBounds (comboRow.reduced (margin / 4, 2));
+            band.typeBox.setBounds (typeRow.reduced (margin / 4, 2));
+
+        band.scSourceBox.setBounds (column.removeFromTop (comboRowHeight).reduced (margin / 4, 2));
+        band.scModeBox.setBounds (column.removeFromTop (comboRowHeight).reduced (margin / 4, 2));
 
         for (auto* knob : { &band.freq, &band.q, &band.gain, &band.range, &band.threshold, &band.attack, &band.release })
             knob->slider.setBounds (column.removeFromTop (rowHeight).reduced (margin / 2, 0));

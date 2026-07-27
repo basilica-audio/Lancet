@@ -136,6 +136,30 @@ void LancetEngine::setBandSaturation (int bandIndex, bool saturation) noexcept
     bands[static_cast<size_t> (bandIndex)]->setSaturation (saturation);
 }
 
+void LancetEngine::setBandSidechainExternal (int bandIndex, bool external) noexcept
+{
+    jassert (bandIndex >= 0 && bandIndex < numBands);
+    bands[static_cast<size_t> (bandIndex)]->setSidechainExternal (external);
+}
+
+void LancetEngine::setBandDetectorWide (int bandIndex, bool wide) noexcept
+{
+    jassert (bandIndex >= 0 && bandIndex < numBands);
+    bands[static_cast<size_t> (bandIndex)]->setDetectorWide (wide);
+}
+
+float LancetEngine::getLastAppliedDynamicGainDb (int bandIndex) const noexcept
+{
+    jassert (bandIndex >= 0 && bandIndex < numBands);
+    return bands[static_cast<size_t> (bandIndex)]->getLastAppliedDynamicGainDb();
+}
+
+float LancetEngine::getLastAppliedFilterQ (int bandIndex) const noexcept
+{
+    jassert (bandIndex >= 0 && bandIndex < numBands);
+    return bands[static_cast<size_t> (bandIndex)]->getLastAppliedFilterQ();
+}
+
 void LancetEngine::setInputTrimDb (float newTrimDb) noexcept
 {
     lastInputTrimDb = newTrimDb;
@@ -155,6 +179,12 @@ void LancetEngine::setMixPercent (float newMixPercent) noexcept
 }
 
 void LancetEngine::process (juce::dsp::AudioBlock<float>& block) noexcept
+{
+    process (block, juce::dsp::AudioBlock<const float>());
+}
+
+void LancetEngine::process (juce::dsp::AudioBlock<float>& block,
+                             const juce::dsp::AudioBlock<const float>& sidechainBlock) noexcept
 {
     const auto requestedSamples = block.getNumSamples();
 
@@ -190,9 +220,21 @@ void LancetEngine::process (juce::dsp::AudioBlock<float>& block) noexcept
     preChainBlock.copyFrom (workingBlock);
     const juce::dsp::AudioBlock<const float> preChainBlockConst (preChainBlock);
 
+    // External sidechain feed (v0.4.0, SOTA brief F3), trimmed to the same
+    // extent as the working block so a host that hands us a shorter or
+    // narrower sidechain buffer than the main bus can never cause an
+    // out-of-bounds read. An empty block here simply means "no sidechain",
+    // which every band handles by staying on the pre-chain tap.
+    auto usableSidechain = sidechainBlock;
+
+    if (usableSidechain.getNumChannels() > 0 && usableSidechain.getNumSamples() >= numSamples)
+        usableSidechain = usableSidechain.getSubBlock (0, numSamples);
+    else
+        usableSidechain = juce::dsp::AudioBlock<const float>();
+
     // Coefficient/gain updates happen once per <= 32-sample sub-block (see
-    // class comment); the main serial filter chain itself still processes
-    // every sample within that sub-block.
+    // class comment); the gain path itself is now evaluated per sample
+    // inside DynamicBand (v0.4.0, SOTA brief F1).
     size_t position = 0;
 
     while (position < numSamples)
@@ -201,7 +243,7 @@ void LancetEngine::process (juce::dsp::AudioBlock<float>& block) noexcept
         auto subBlock = workingBlock.getSubBlock (position, subSize);
 
         for (auto* band : bands)
-            band->processSubBlock (subBlock, preChainBlockConst, position, subSize);
+            band->processSubBlock (subBlock, preChainBlockConst, usableSidechain, position, subSize);
 
         position += subSize;
     }
