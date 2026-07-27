@@ -154,6 +154,12 @@ float LancetEngine::getLastAppliedDynamicGainDb (int bandIndex) const noexcept
     return bands[static_cast<size_t> (bandIndex)]->getLastAppliedDynamicGainDb();
 }
 
+float LancetEngine::getLastAppliedFilterQ (int bandIndex) const noexcept
+{
+    jassert (bandIndex >= 0 && bandIndex < numBands);
+    return bands[static_cast<size_t> (bandIndex)]->getLastAppliedFilterQ();
+}
+
 void LancetEngine::setInputTrimDb (float newTrimDb) noexcept
 {
     lastInputTrimDb = newTrimDb;

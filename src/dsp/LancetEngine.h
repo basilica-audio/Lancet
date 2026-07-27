@@ -114,6 +114,10 @@ public:
     // planned M3 per-band gain-reduction needle; no meter uses it yet.
     float getLastAppliedDynamicGainDb (int bandIndex) const noexcept;
 
+    // The Q band `bandIndex` actually used for the most recent block, after
+    // the Gain/Q coupling - see DynamicBand::getLastAppliedFilterQ().
+    float getLastAppliedFilterQ (int bandIndex) const noexcept;
+
     // Always 0: every filter in this engine (bell/shelf bands, Detector
     // bandpasses) is minimum-phase with no lookahead - see class comment.
     static constexpr int getLatencySamples() noexcept { return 0; }

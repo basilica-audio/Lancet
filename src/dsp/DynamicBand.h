@@ -229,6 +229,14 @@ public:
     // needle.
     float getLastAppliedDynamicGainDb() const noexcept { return lastAppliedDynamicGainDb.load (std::memory_order_relaxed); }
 
+    // The Q actually baked into the filter for the most recent sub-block -
+    // i.e. the band's own Q once the Gain/Q coupling (if enabled) has had its
+    // say. Same relaxed-atomic contract as the gain telemetry above. Exposed
+    // so the coupling's smoothness is measurable rather than merely argued
+    // for (tests/GainQCouplingTests.cpp), and because an M3 meter that draws
+    // the band's live curve needs exactly this number.
+    float getLastAppliedFilterQ() const noexcept { return lastAppliedFilterQ.load (std::memory_order_relaxed); }
+
 private:
     // Standard "flat"/Butterworth shelf slope (Q = 1/sqrt(2)), matching the
     // implicit default juce::dsp::IIR::ArrayCoefficients::makeLowShelf/
@@ -383,6 +391,7 @@ private:
     bool coefficientCacheValid = false;
 
     std::atomic<float> lastAppliedDynamicGainDb { 0.0f };
+    std::atomic<float> lastAppliedFilterQ { 1.0f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DynamicBand)
 };

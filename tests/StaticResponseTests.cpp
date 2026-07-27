@@ -138,3 +138,111 @@ TEST_CASE ("Band 6 HighShelf mode matches the analytic RBJ high-shelf response w
         CHECK (measuredDb == Catch::Approx (referenceDb).margin (0.5));
     }
 }
+
+//==============================================================================
+// v0.4.0 (SOTA brief T3): the same claim as the cases above, but tightened
+// from +-0.5 dB to +-0.05 dB across a grid, because v0.4.0 swapped the band's
+// filter core from an RBJ biquad to a trapezoidal SVF (src/dsp/TptSvf.h) and
+// "the static curve is unchanged" has to be a measurement.
+//
+// The 0.5 dB cases above measure with an RMS ratio over a settled tail, whose
+// own error floor is a few hundredths of a dB (window edges, residual
+// transient). Reaching 0.05 dB honestly needs a leakage-free measurement, so
+// these cases use a direct sin/cos correlation over a whole number of periods
+// (TestHelpers::toneAmplitude) - exact, given an integer probe frequency and a
+// one-second window at 48 kHz.
+namespace
+{
+    struct ResponsePoint
+    {
+        int bandIndex;
+        bool shelfSelected;
+        float cornerHz;
+        float q;
+        float gainDb;
+        int probeHz;
+    };
+
+    // Settled magnitude response in dB at `probeHz`, measured by correlation.
+    double measurePreciseResponseDb (const ResponsePoint& point)
+    {
+        constexpr int settle = static_cast<int> (testSampleRate);  // 1 s
+        constexpr int analyse = static_cast<int> (testSampleRate); // 1 s, exact for any integer Hz
+        constexpr int total = settle + analyse;
+
+        LancetEngine engine;
+        engine.setBandOn (point.bandIndex, true);
+        engine.setBandShelfSelected (point.bandIndex, point.shelfSelected);
+        engine.setBandFrequencyHz (point.bandIndex, point.cornerHz);
+        engine.setBandQ (point.bandIndex, point.q);
+        engine.setBandGainDb (point.bandIndex, point.gainDb);
+        engine.setBandRangeDb (point.bandIndex, 0.0f);
+        engine.setInputTrimDb (0.0f);
+        engine.setOutputTrimDb (0.0f);
+        engine.setMixPercent (100.0f);
+
+        juce::dsp::ProcessSpec spec;
+        spec.sampleRate = testSampleRate;
+        spec.maximumBlockSize = static_cast<juce::uint32> (total);
+        spec.numChannels = 1;
+        engine.prepare (spec);
+
+        juce::AudioBuffer<float> reference (1, total);
+        TestHelpers::fillWithSine (reference, testSampleRate, point.probeHz, 0.4f);
+
+        juce::AudioBuffer<float> processed;
+        processed.makeCopyOf (reference);
+
+        juce::dsp::AudioBlock<float> block (processed);
+        engine.process (block);
+
+        const auto in = TestHelpers::toneAmplitude (reference, 0, settle, analyse, point.probeHz, testSampleRate);
+        const auto out = TestHelpers::toneAmplitude (processed, 0, settle, analyse, point.probeHz, testSampleRate);
+
+        REQUIRE (std::abs (in) > 0.0);
+        return 20.0 * std::log10 (std::abs (out) / std::abs (in));
+    }
+}
+
+TEST_CASE ("TPT SVF band core matches the analytic RBJ response to +-0.05 dB across a band type/gain/Q grid",
+           "[dsp][static-response][svf]")
+{
+    static const ResponsePoint points[] = {
+        // Bell (Band 3), on and off centre, boost and cut, low and high Q.
+        { 2, false, 100.0f, 0.7f, 6.0f, 100 },
+        { 2, false, 100.0f, 0.7f, -6.0f, 100 },
+        { 2, false, 1000.0f, 1.0f, 12.0f, 1000 },
+        { 2, false, 1000.0f, 1.0f, 12.0f, 700 },
+        { 2, false, 1000.0f, 1.0f, -12.0f, 1000 },
+        { 2, false, 1000.0f, 8.0f, 9.0f, 1000 },
+        { 2, false, 5000.0f, 3.0f, 3.0f, 5000 },
+        { 2, false, 200.0f, 0.3f, -9.0f, 200 },
+        { 2, false, 8000.0f, 12.0f, 9.0f, 8000 },
+        // Low shelf (Band 1), measured in the plateau and near the corner.
+        { 0, true, 150.0f, 1.0f, 9.0f, 30 },
+        { 0, true, 150.0f, 1.0f, -9.0f, 30 },
+        { 0, true, 150.0f, 1.0f, 9.0f, 150 },
+        // High shelf (Band 6), likewise.
+        { 5, true, 6000.0f, 1.0f, 9.0f, 18000 },
+        { 5, true, 6000.0f, 1.0f, -9.0f, 18000 },
+        { 5, true, 6000.0f, 1.0f, 9.0f, 6000 },
+    };
+
+    for (const auto& point : points)
+    {
+        INFO ("band " << point.bandIndex + 1 << (point.shelfSelected ? " shelf" : " bell")
+              << ", corner = " << point.cornerHz << " Hz, Q = " << point.q
+              << ", gain = " << point.gainDb << " dB, probe = " << point.probeHz << " Hz");
+
+        const auto measuredDb = measurePreciseResponseDb (point);
+
+        const auto expectedDb = point.shelfSelected
+                                  ? TestHelpers::rbjShelfMagnitudeDb (testSampleRate, point.cornerHz, shelfQ,
+                                                                       point.gainDb, point.probeHz, point.bandIndex == 0)
+                                  : TestHelpers::rbjPeakMagnitudeDb (testSampleRate, point.cornerHz, point.q,
+                                                                      point.gainDb, point.probeHz);
+
+        INFO ("measured = " << measuredDb << " dB, analytic RBJ = " << expectedDb << " dB");
+        CHECK (std::abs (measuredDb - expectedDb) <= 0.05);
+    }
+}

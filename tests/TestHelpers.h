@@ -213,16 +213,24 @@ namespace TestHelpers
         return scratch;
     }
 
-    // Median magnitude over [firstBin, lastBin], skipping any bin within
-    // `excludeRadius` of `excludeBin` - the "local skirt floor" a discrete
-    // artefact line has to be compared against.
-    inline double medianMagnitude (const std::vector<float>& spectrum,
-                                    int firstBin,
-                                    int lastBin,
-                                    int excludeBin,
-                                    int excludeRadius)
+    // Largest magnitude over [firstBin, lastBin], skipping any bin within
+    // `excludeRadius` of `excludeBin`.
+    //
+    // This is the reference a suspected artefact line has to be compared
+    // against, and it is deliberately a peak rather than a mean or median:
+    // the surrounding spectrum is generally not a smooth floor but a comb
+    // (an amplitude-modulated carrier's sidebands sit on discrete lines with
+    // gaps between them), so a median would sample the gaps and make every
+    // ordinary sideband look like an artefact standing above it. Comparing a
+    // line against the peaks of its neighbours asks the right question: does
+    // *this* line stand out from the structure it sits in?
+    inline double peakMagnitudeExcluding (const std::vector<float>& spectrum,
+                                           int firstBin,
+                                           int lastBin,
+                                           int excludeBin,
+                                           int excludeRadius)
     {
-        std::vector<double> values;
+        double peak = 0.0;
 
         for (int bin = firstBin; bin <= lastBin; ++bin)
         {
@@ -232,15 +240,10 @@ namespace TestHelpers
             if (std::abs (bin - excludeBin) <= excludeRadius)
                 continue;
 
-            values.push_back (static_cast<double> (spectrum[static_cast<size_t> (bin)]));
+            peak = std::max (peak, static_cast<double> (spectrum[static_cast<size_t> (bin)]));
         }
 
-        if (values.empty())
-            return 0.0;
-
-        const auto middle = values.begin() + static_cast<long> (values.size() / 2);
-        std::nth_element (values.begin(), middle, values.end());
-        return *middle;
+        return peak;
     }
 
     // Root-mean-square of the sample-to-sample differences at the sample

@@ -217,3 +217,153 @@ TEST_CASE ("Gain/Q coupling off: measured -3 dB bandwidth stays the same at near
 
     CHECK (engagedBandwidthHz == Catch::Approx (restBandwidthHz).margin (restBandwidthHz * 0.15));
 }
+
+//==============================================================================
+// v0.4.0 (SOTA brief F6/T12): the coupling now reads a 30 ms-smoothed copy of
+// the dynamic gain rather than the raw instantaneous value.
+//
+// Why that mattered: up to v0.3.0 the coupling's input was the gain
+// computer's decision for the current sub-block, so a transient crossing the
+// threshold could swing the realised Q across its entire range - baseQ down to
+// 0.4*baseQ - in a single 32-sample step. At Q 12 that is a 7.2 Q-unit jump in
+// 0.67 ms, i.e. the filter's whole shape changing between one sub-block and
+// the next.
+//
+// The measurement reads the Q the band actually baked into its coefficients
+// (DynamicBand::getLastAppliedFilterQ), so this is the realised trajectory
+// rather than an argument about coefficients.
+namespace
+{
+    // A trigger buffer long enough to hold a whole number of periods, fed to
+    // the detector with a rolling offset. The 32-sample buffer the cases above
+    // reuse from sample 0 every sub-block is only phase-continuous by
+    // accident: repeating a 32-sample slice of a 1 kHz sine actually presents
+    // the detector with a 1500 Hz-periodic waveform whose spectrum has no
+    // 1 kHz component at all, which a narrow (Q >= 4) detector bandpass
+    // rejects almost completely. These cases sweep Q up to 12, so they need a
+    // genuinely continuous trigger.
+    constexpr int continuousTriggerSamples = 4800; // exactly 100 periods of 1 kHz at 48 kHz
+
+    juce::AudioBuffer<float> makeContinuousTrigger (float amplitude)
+    {
+        juce::AudioBuffer<float> buffer (1, continuousTriggerSamples);
+        TestHelpers::fillWithSine (buffer, testSampleRate, static_cast<double> (centreFrequencyHz), amplitude);
+        return buffer;
+    }
+
+    struct QTrajectory
+    {
+        double maxStepPerSubBlock = 0.0;
+        float restQ = 0.0f;
+        float engagedQ = 0.0f;
+    };
+
+    // Drives a band from rest to full Range with an abrupt burst and reports
+    // both the largest realised-Q change between consecutive sub-blocks and
+    // the endpoints of the traversal.
+    QTrajectory measureQTrajectory (float nominalQ, float dialedRangeDb)
+    {
+        constexpr int restSubBlocks = 500;
+        constexpr int burstSubBlocks = 4000; // ~2.7 s, far past the 30 ms smoother
+        constexpr float loudAmplitude = 0.6f;
+
+        DynamicBand band (DynamicBand::ShelfDirection::none);
+        band.setOn (true);
+        band.setFrequencyHz (centreFrequencyHz);
+        band.setQ (nominalQ);
+        band.setStaticGainDb (0.0f);
+        band.setRangeDb (dialedRangeDb);
+        // 30 dB of overshoot: the gain computer slams straight to the Range
+        // clamp, which is the harshest input the coupling can be given.
+        band.setThresholdDb (juce::Decibels::gainToDecibels (loudAmplitude) - 30.0f);
+        band.setAttackMs (0.1f);
+        band.setReleaseMs (50.0f);
+        band.setGainQ (true);
+        band.prepare (makeSpec());
+
+        const auto quietTrigger = makeContinuousTrigger (loudAmplitude * 0.001f);
+        const auto loudTrigger = makeContinuousTrigger (loudAmplitude);
+        const juce::dsp::AudioBlock<const float> quietBlock (quietTrigger);
+        const juce::dsp::AudioBlock<const float> loudBlock (loudTrigger);
+
+        juce::AudioBuffer<float> scratch (1, static_cast<int> (subBlockSamples));
+
+        size_t offset = 0;
+
+        const auto advance = [&offset] ()
+        {
+            offset += subBlockSamples;
+
+            if (offset + subBlockSamples > static_cast<size_t> (continuousTriggerSamples))
+                offset = 0;
+        };
+
+        for (int i = 0; i < restSubBlocks; ++i)
+        {
+            scratch.clear();
+            juce::dsp::AudioBlock<float> mainBlock (scratch);
+            band.processSubBlock (mainBlock, quietBlock, offset, subBlockSamples);
+            advance();
+        }
+
+        QTrajectory result;
+        result.restQ = band.getLastAppliedFilterQ();
+
+        auto previousQ = result.restQ;
+
+        for (int i = 0; i < burstSubBlocks; ++i)
+        {
+            scratch.clear();
+            juce::dsp::AudioBlock<float> mainBlock (scratch);
+            band.processSubBlock (mainBlock, loudBlock, offset, subBlockSamples);
+            advance();
+
+            const auto currentQ = band.getLastAppliedFilterQ();
+            result.maxStepPerSubBlock = juce::jmax (result.maxStepPerSubBlock,
+                                                     static_cast<double> (std::abs (currentQ - previousQ)));
+            previousQ = currentQ;
+        }
+
+        result.engagedQ = previousQ;
+        return result;
+    }
+}
+
+TEST_CASE ("Gain/Q coupling: the realised Q never moves more than 0.5 Q units in a single sub-block",
+           "[dsp][gainq][smoothness]")
+{
+    for (const auto nominalQ : { 2.0f, 6.0f, 12.0f })
+    {
+        const auto trajectory = measureQTrajectory (nominalQ, -12.0f);
+
+        INFO ("base Q = " << nominalQ << ", largest realised-Q step per sub-block = "
+              << trajectory.maxStepPerSubBlock);
+        CHECK (trajectory.maxStepPerSubBlock < 0.5);
+    }
+}
+
+TEST_CASE ("Gain/Q coupling: the realised Q still traverses its full documented span", "[dsp][gainq][smoothness]")
+{
+    // The counterpart to the smoothness bound: the coupling must still get all
+    // the way from baseQ to 0.4*baseQ, or the assertion above could be passed
+    // by a coupling that had simply stopped working.
+    constexpr float nominalQ = 6.0f;
+
+    const auto trajectory = measureQTrajectory (nominalQ, -12.0f);
+
+    INFO ("rest Q = " << trajectory.restQ << ", engaged Q = " << trajectory.engagedQ
+          << " (expected ~" << nominalQ * 0.4f << ")");
+    CHECK (trajectory.restQ == Catch::Approx (nominalQ).margin (0.01));
+    CHECK (trajectory.engagedQ == Catch::Approx (nominalQ * 0.4f).margin (0.05));
+}
+
+TEST_CASE ("Gain/Q coupling off: the realised Q never moves at all", "[dsp][gainq][smoothness]")
+{
+    // Range 0 disengages the coupling just as switching gainQ off does.
+    const auto trajectory = measureQTrajectory (6.0f, 0.0f);
+
+    INFO ("largest realised-Q step per sub-block with the coupling disengaged = "
+          << trajectory.maxStepPerSubBlock);
+    CHECK (trajectory.maxStepPerSubBlock < 1.0e-6);
+    CHECK (trajectory.engagedQ == Catch::Approx (6.0f).margin (0.01));
+}

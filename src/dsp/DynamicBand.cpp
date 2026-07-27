@@ -90,6 +90,7 @@ void DynamicBand::reset()
 
     coefficientCacheValid = false;
     lastAppliedDynamicGainDb.store (0.0f, std::memory_order_relaxed);
+    lastAppliedFilterQ.store (effectiveQ(), std::memory_order_relaxed);
 }
 
 lnct::TptSvf::Type DynamicBand::currentSvfType() const noexcept
@@ -197,6 +198,7 @@ void DynamicBand::processSubBlock (juce::dsp::AudioBlock<float> mainSubBlock,
     // the 30 ms-smoothed dynamic gain the previous samples left behind, so
     // the realised Q can only move by a fraction of its span per sub-block.
     const auto mainFilterQ = computeMainFilterQ (dynamicGainDbAbsSmoothed);
+    lastAppliedFilterQ.store (mainFilterQ, std::memory_order_relaxed);
 
     if (! isExactlyUnchanged (mainFilterQ, cachedQ)
         || ! isExactlyUnchanged (gBase, cachedGBase)
