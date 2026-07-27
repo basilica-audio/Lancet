@@ -97,39 +97,78 @@ TEST_CASE ("Processor instantiates with the expected parameters", "[processor][p
             ParamIDs::b1On, ParamIDs::b1Type, ParamIDs::b1Freq, ParamIDs::b1Q, ParamIDs::b1Gain, ParamIDs::b1Range,
             ParamIDs::b1Threshold, ParamIDs::b1Attack, ParamIDs::b1Release, ParamIDs::b1Listen,
             ParamIDs::b1AutoRelease, ParamIDs::b1GainQ, ParamIDs::b1Sat,
+            ParamIDs::b1ScSource, ParamIDs::b1ScMode,
 
             ParamIDs::b2On, ParamIDs::b2Freq, ParamIDs::b2Q, ParamIDs::b2Gain, ParamIDs::b2Range,
             ParamIDs::b2Threshold, ParamIDs::b2Attack, ParamIDs::b2Release, ParamIDs::b2Listen,
             ParamIDs::b2AutoRelease, ParamIDs::b2GainQ, ParamIDs::b2Sat,
+            ParamIDs::b2ScSource, ParamIDs::b2ScMode,
 
             ParamIDs::b3On, ParamIDs::b3Freq, ParamIDs::b3Q, ParamIDs::b3Gain, ParamIDs::b3Range,
             ParamIDs::b3Threshold, ParamIDs::b3Attack, ParamIDs::b3Release, ParamIDs::b3Listen,
             ParamIDs::b3AutoRelease, ParamIDs::b3GainQ, ParamIDs::b3Sat,
+            ParamIDs::b3ScSource, ParamIDs::b3ScMode,
 
             ParamIDs::b4On, ParamIDs::b4Freq, ParamIDs::b4Q, ParamIDs::b4Gain, ParamIDs::b4Range,
             ParamIDs::b4Threshold, ParamIDs::b4Attack, ParamIDs::b4Release, ParamIDs::b4Listen,
             ParamIDs::b4AutoRelease, ParamIDs::b4GainQ, ParamIDs::b4Sat,
+            ParamIDs::b4ScSource, ParamIDs::b4ScMode,
 
             ParamIDs::b5On, ParamIDs::b5Freq, ParamIDs::b5Q, ParamIDs::b5Gain, ParamIDs::b5Range,
             ParamIDs::b5Threshold, ParamIDs::b5Attack, ParamIDs::b5Release, ParamIDs::b5Listen,
             ParamIDs::b5AutoRelease, ParamIDs::b5GainQ, ParamIDs::b5Sat,
+            ParamIDs::b5ScSource, ParamIDs::b5ScMode,
 
             ParamIDs::b6On, ParamIDs::b6Type, ParamIDs::b6Freq, ParamIDs::b6Q, ParamIDs::b6Gain, ParamIDs::b6Range,
             ParamIDs::b6Threshold, ParamIDs::b6Attack, ParamIDs::b6Release, ParamIDs::b6Listen,
             ParamIDs::b6AutoRelease, ParamIDs::b6GainQ, ParamIDs::b6Sat,
+            ParamIDs::b6ScSource, ParamIDs::b6ScMode,
         };
 
         for (const auto* id : allIds)
             CHECK (apvts.getParameter (id) != nullptr);
     }
 
-    SECTION ("total parameter count matches the v0.3.0 layout")
+    SECTION ("total parameter count matches the v0.4.0 layout")
     {
-        // 3 global (in/out trim, mix) + bands 1 & 6 (13 each: On, Type,
+        // 3 global (in/out trim, mix) + bands 1 & 6 (15 each: On, Type,
         // Freq, Q, Gain, Range, Threshold, Attack, Release, Listen,
-        // AutoRelease, GainQ, Saturation) + bands 2-5 (12 each: no Type) =
-        // 3 + 26 + 48 = 77.
-        CHECK (apvts.processor.getParameters().size() == 77);
+        // AutoRelease, GainQ, Saturation, SC Source, SC Mode) + bands 2-5
+        // (14 each: no Type) = 3 + 30 + 56 = 89. v0.4.0 added the two SC
+        // choices per band (12 parameters), taking the v0.3.0 count of 77
+        // to 89.
+        CHECK (apvts.processor.getParameters().size() == 89);
+    }
+
+    SECTION ("SC Source and SC Mode default to the pre-v0.4.0 behaviour on every band")
+    {
+        // Index 0 is Internal / Split - i.e. the pre-chain tap through the
+        // band-matched bandpass, which is what every build up to v0.3.0
+        // always did. This is what makes adding them a neutral change: a
+        // restored v0.3.0 session cannot sound different because of them.
+        struct ScIds
+        {
+            const char* source;
+            const char* mode;
+        };
+
+        for (const auto& ids : { ScIds { ParamIDs::b1ScSource, ParamIDs::b1ScMode },
+                                  ScIds { ParamIDs::b2ScSource, ParamIDs::b2ScMode },
+                                  ScIds { ParamIDs::b3ScSource, ParamIDs::b3ScMode },
+                                  ScIds { ParamIDs::b4ScSource, ParamIDs::b4ScMode },
+                                  ScIds { ParamIDs::b5ScSource, ParamIDs::b5ScMode },
+                                  ScIds { ParamIDs::b6ScSource, ParamIDs::b6ScMode } })
+        {
+            auto* sourceParam = dynamic_cast<juce::AudioParameterChoice*> (apvts.getParameter (ids.source));
+            REQUIRE (sourceParam != nullptr);
+            CHECK (sourceParam->getIndex() == 0);
+            CHECK (sourceParam->choices == juce::StringArray { "Internal", "External" });
+
+            auto* modeParam = dynamic_cast<juce::AudioParameterChoice*> (apvts.getParameter (ids.mode));
+            REQUIRE (modeParam != nullptr);
+            CHECK (modeParam->getIndex() == 0);
+            CHECK (modeParam->choices == juce::StringArray { "Split", "Wide" });
+        }
     }
 
     SECTION ("AutoRelease/GainQ/Saturation default off for every band")

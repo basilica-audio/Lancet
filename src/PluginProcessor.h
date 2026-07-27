@@ -51,6 +51,29 @@ public:
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
+    //==============================================================================
+    // Saved-state schema version (v0.4.0). getStateInformation() stamps this
+    // as a `stateVersion` attribute on the exported state root; an XML
+    // without the attribute is schema 1, i.e. anything Lancet v0.1.0-v0.3.0
+    // ever wrote.
+    //
+    // Schema 2 needs no value remapping: every parameter added since schema
+    // 1 defaults to its pre-existing behaviour, so JUCE's own tolerant
+    // restore (absent ID -> ParameterLayout default) already produces the
+    // right result. The attribute is written now purely so that a future
+    // release which *does* need a transform (e.g. widening an existing
+    // NormalisableRange, which changes host automation-curve mapping) has a
+    // reliable way to tell which schema it is reading.
+    static constexpr int currentStateVersion = 2;
+
+    // Attribute name the version is stamped under on the exported state root.
+    static constexpr const char* stateVersionAttribute = "stateVersion";
+
+    // The schema version of the most recent setStateInformation() call, or
+    // currentStateVersion if no state has been restored yet. Read by
+    // tests/StateTests.cpp; nothing in the audio path consults it.
+    int getLoadedStateVersion() const noexcept { return loadedStateVersion; }
+
     juce::AudioProcessorValueTreeState apvts;
 
     // M2 preset system (.scaffold/specs/preset-system-m2.md,
@@ -84,6 +107,8 @@ private:
         std::atomic<float>* autoRelease = nullptr;
         std::atomic<float>* gainQ = nullptr;
         std::atomic<float>* sat = nullptr;
+        std::atomic<float>* scSource = nullptr;
+        std::atomic<float>* scMode = nullptr;
     };
 
     std::array<BandParams, LancetEngine::numBands> bandParams;
@@ -91,6 +116,9 @@ private:
     std::atomic<float>* inTrimDb = nullptr;
     std::atomic<float>* outTrimDb = nullptr;
     std::atomic<float>* mixPercent = nullptr;
+
+    // See getLoadedStateVersion(). Message-thread only.
+    int loadedStateVersion = currentStateVersion;
 
     // Reads every APVTS atomic and pushes the current values into `engine`.
     // Called both from prepareToPlay() (so the first block after prepare

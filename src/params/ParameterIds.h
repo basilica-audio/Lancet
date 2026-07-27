@@ -23,6 +23,16 @@
 // `bN_sat` - an opt-in, off-by-default boolean gating a gentle saturation
 // stage applied only while a band is actively boosting (see DynamicBand.h),
 // same tolerant-import shape as the v0.2.0 additions above.
+//
+// v0.4.0 (SOTA brief F3/F4) adds two further new per-band IDs,
+// `bN_scSource` (Internal/External sidechain) and `bN_scMode` (Split/Wide
+// detection). Both are Choice parameters whose index 0 is exactly the
+// pre-v0.4.0 behaviour, so the same tolerant-import property holds: a
+// v0.1.0-v0.3.0 session that has never heard of them restores with both at
+// index 0 and therefore sounds unchanged. v0.4.0 is also the release that
+// starts stamping a `stateVersion` attribute on the saved state root (see
+// LancetAudioProcessor::getStateInformation) - schema 2; an absent
+// attribute means schema 1, i.e. anything up to v0.3.0.
 namespace ParamIDs
 {
     // Per-band parameters, bands 1-6 in signal-flow order. Every band gets
@@ -42,6 +52,8 @@ namespace ParamIDs
     inline constexpr auto b1AutoRelease = "b1_autoRelease";
     inline constexpr auto b1GainQ = "b1_gainQ";
     inline constexpr auto b1Sat = "b1_sat";
+    inline constexpr auto b1ScSource = "b1_scSource";
+    inline constexpr auto b1ScMode = "b1_scMode";
 
     inline constexpr auto b2On = "b2_on";
     inline constexpr auto b2Freq = "b2_freq";
@@ -55,6 +67,8 @@ namespace ParamIDs
     inline constexpr auto b2AutoRelease = "b2_autoRelease";
     inline constexpr auto b2GainQ = "b2_gainQ";
     inline constexpr auto b2Sat = "b2_sat";
+    inline constexpr auto b2ScSource = "b2_scSource";
+    inline constexpr auto b2ScMode = "b2_scMode";
 
     inline constexpr auto b3On = "b3_on";
     inline constexpr auto b3Freq = "b3_freq";
@@ -68,6 +82,8 @@ namespace ParamIDs
     inline constexpr auto b3AutoRelease = "b3_autoRelease";
     inline constexpr auto b3GainQ = "b3_gainQ";
     inline constexpr auto b3Sat = "b3_sat";
+    inline constexpr auto b3ScSource = "b3_scSource";
+    inline constexpr auto b3ScMode = "b3_scMode";
 
     inline constexpr auto b4On = "b4_on";
     inline constexpr auto b4Freq = "b4_freq";
@@ -81,6 +97,8 @@ namespace ParamIDs
     inline constexpr auto b4AutoRelease = "b4_autoRelease";
     inline constexpr auto b4GainQ = "b4_gainQ";
     inline constexpr auto b4Sat = "b4_sat";
+    inline constexpr auto b4ScSource = "b4_scSource";
+    inline constexpr auto b4ScMode = "b4_scMode";
 
     inline constexpr auto b5On = "b5_on";
     inline constexpr auto b5Freq = "b5_freq";
@@ -94,6 +112,8 @@ namespace ParamIDs
     inline constexpr auto b5AutoRelease = "b5_autoRelease";
     inline constexpr auto b5GainQ = "b5_gainQ";
     inline constexpr auto b5Sat = "b5_sat";
+    inline constexpr auto b5ScSource = "b5_scSource";
+    inline constexpr auto b5ScMode = "b5_scMode";
 
     inline constexpr auto b6On = "b6_on";
     inline constexpr auto b6Type = "b6_type";
@@ -108,6 +128,8 @@ namespace ParamIDs
     inline constexpr auto b6AutoRelease = "b6_autoRelease";
     inline constexpr auto b6GainQ = "b6_gainQ";
     inline constexpr auto b6Sat = "b6_sat";
+    inline constexpr auto b6ScSource = "b6_scSource";
+    inline constexpr auto b6ScMode = "b6_scMode";
 
     // Global trim/mix, applied before Band 1 / after Band 6 respectively;
     // Mix is a parallel dry/wet blend around the whole six-band chain (see

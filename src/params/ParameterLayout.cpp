@@ -39,6 +39,8 @@ namespace
         const char* autoRelease;
         const char* gainQ;
         const char* sat;
+        const char* scSource;
+        const char* scMode;
     };
 
     // v0.3.0 (docs/voicing-notes.md): per-band default Q/Threshold/Attack/
@@ -179,6 +181,27 @@ namespace
         // DynamicBand::processSubBlock), never on a cut or an idle/off band.
         layout.add (std::make_unique<juce::AudioParameterBool> (
             juce::ParameterID { ids.sat, 1 }, labelPrefix + " Saturation", false));
+
+        // Sidechain source (v0.4.0, SOTA brief F3): Internal is the
+        // pre-chain tap every pre-v0.4.0 build always used, and stays the
+        // default so adding this parameter changes nothing about an
+        // existing session. External reads the plugin's optional sidechain
+        // bus, falling back to Internal whenever the host provides none.
+        layout.add (std::make_unique<juce::AudioParameterChoice> (
+            juce::ParameterID { ids.scSource, 1 },
+            labelPrefix + " SC Source",
+            juce::StringArray { "Internal", "External" },
+            0)); // default Internal
+
+        // Sidechain mode (v0.4.0, SOTA brief F4): Split is the band-matched
+        // bandpass detection every pre-v0.4.0 build always used, and stays
+        // the default. Wide bypasses the bandpass so the band follows
+        // full-range programme level (see Detector::setSplitMode()).
+        layout.add (std::make_unique<juce::AudioParameterChoice> (
+            juce::ParameterID { ids.scMode, 1 },
+            labelPrefix + " SC Mode",
+            juce::StringArray { "Split", "Wide" },
+            0)); // default Split
     }
 }
 
@@ -210,42 +233,42 @@ namespace lnct
         addBandParameters (layout,
                             { ParamIDs::b1On, ParamIDs::b1Type, ParamIDs::b1Freq, ParamIDs::b1Q, ParamIDs::b1Gain,
                               ParamIDs::b1Range, ParamIDs::b1Threshold, ParamIDs::b1Attack, ParamIDs::b1Release, ParamIDs::b1Listen,
-                              ParamIDs::b1AutoRelease, ParamIDs::b1GainQ, ParamIDs::b1Sat },
+                              ParamIDs::b1AutoRelease, ParamIDs::b1GainQ, ParamIDs::b1Sat, ParamIDs::b1ScSource, ParamIDs::b1ScMode },
                             "Band 1", 100.0f, false, "Low Shelf",
                             { 0.9f, -26.0f, 25.0f, 280.0f }); // boom/sub control: slow, gentle
 
         addBandParameters (layout,
                             { ParamIDs::b2On, nullptr, ParamIDs::b2Freq, ParamIDs::b2Q, ParamIDs::b2Gain,
                               ParamIDs::b2Range, ParamIDs::b2Threshold, ParamIDs::b2Attack, ParamIDs::b2Release, ParamIDs::b2Listen,
-                              ParamIDs::b2AutoRelease, ParamIDs::b2GainQ, ParamIDs::b2Sat },
+                              ParamIDs::b2AutoRelease, ParamIDs::b2GainQ, ParamIDs::b2Sat, ParamIDs::b2ScSource, ParamIDs::b2ScMode },
                             "Band 2", 250.0f, false, {},
                             { 1.1f, -28.0f, 15.0f, 180.0f }); // mud/box resonance: vocal & guitar body
 
         addBandParameters (layout,
                             { ParamIDs::b3On, nullptr, ParamIDs::b3Freq, ParamIDs::b3Q, ParamIDs::b3Gain,
                               ParamIDs::b3Range, ParamIDs::b3Threshold, ParamIDs::b3Attack, ParamIDs::b3Release, ParamIDs::b3Listen,
-                              ParamIDs::b3AutoRelease, ParamIDs::b3GainQ, ParamIDs::b3Sat },
+                              ParamIDs::b3AutoRelease, ParamIDs::b3GainQ, ParamIDs::b3Sat, ParamIDs::b3ScSource, ParamIDs::b3ScMode },
                             "Band 3", 630.0f, true, {},
                             { 1.0f, -26.0f, 8.0f, 130.0f }); // general midrange presence (default-on demo band)
 
         addBandParameters (layout,
                             { ParamIDs::b4On, nullptr, ParamIDs::b4Freq, ParamIDs::b4Q, ParamIDs::b4Gain,
                               ParamIDs::b4Range, ParamIDs::b4Threshold, ParamIDs::b4Attack, ParamIDs::b4Release, ParamIDs::b4Listen,
-                              ParamIDs::b4AutoRelease, ParamIDs::b4GainQ, ParamIDs::b4Sat },
+                              ParamIDs::b4AutoRelease, ParamIDs::b4GainQ, ParamIDs::b4Sat, ParamIDs::b4ScSource, ParamIDs::b4ScMode },
                             "Band 4", 1600.0f, false, {},
                             { 1.2f, -24.0f, 4.0f, 100.0f }); // vocal presence / guitar edge
 
         addBandParameters (layout,
                             { ParamIDs::b5On, nullptr, ParamIDs::b5Freq, ParamIDs::b5Q, ParamIDs::b5Gain,
                               ParamIDs::b5Range, ParamIDs::b5Threshold, ParamIDs::b5Attack, ParamIDs::b5Release, ParamIDs::b5Listen,
-                              ParamIDs::b5AutoRelease, ParamIDs::b5GainQ, ParamIDs::b5Sat },
+                              ParamIDs::b5AutoRelease, ParamIDs::b5GainQ, ParamIDs::b5Sat, ParamIDs::b5ScSource, ParamIDs::b5ScMode },
                             "Band 5", 4000.0f, false, {},
                             { 1.4f, -22.0f, 2.0f, 70.0f }); // sibilance / pick attack / harshness
 
         addBandParameters (layout,
                             { ParamIDs::b6On, ParamIDs::b6Type, ParamIDs::b6Freq, ParamIDs::b6Q, ParamIDs::b6Gain,
                               ParamIDs::b6Range, ParamIDs::b6Threshold, ParamIDs::b6Attack, ParamIDs::b6Release, ParamIDs::b6Listen,
-                              ParamIDs::b6AutoRelease, ParamIDs::b6GainQ, ParamIDs::b6Sat },
+                              ParamIDs::b6AutoRelease, ParamIDs::b6GainQ, ParamIDs::b6Sat, ParamIDs::b6ScSource, ParamIDs::b6ScMode },
                             "Band 6", 10000.0f, false, "High Shelf",
                             { 1.0f, -20.0f, 3.0f, 90.0f }); // air / fizz recovery shelf
 
