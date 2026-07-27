@@ -2,6 +2,50 @@
 
 *Cut where it counts — a surgical dynamic EQ with an analog soul.*
 
+## What's new in v0.4.0
+
+**The Attack knob is now true down to 0.1 ms.** Up to v0.3.0 there was a
+fixed 50 ms smoother sitting behind the gain computer, so no Attack setting
+faster than about 50 ms could actually be heard - 0.1 ms, 1 ms and 20 ms all
+did the same thing. That smoother is gone; the detector's own ballistics are
+now the only thing shaping how fast a band moves, evaluated once per sample.
+
+**Please read this if you have existing sessions.** A session using a non-zero
+Range with a fast Attack *will* react faster than it did before. This is a bug
+fix, not a re-voicing - the plugin now does what its own knob always said it
+did - but it is a real, audible change and you should expect to hear it. If a
+band now feels too grabby, dial its Attack up: for the first time, that
+control has the effect its label describes. Sessions with `Range = 0` on every
+band (pure static EQ, no dynamics) are unchanged, and the static EQ curves
+themselves are identical to v0.3.0's in every band type, gain and Q.
+
+Also new:
+
+- **Sidechain (SC Source: Internal / External).** Each band can now take its
+  detector input from an external sidechain instead of the audio passing
+  through it - so a band can duck against a kick, a lead vocal, or anything
+  else your host can route. Enable the plugin's sidechain input in your host
+  first; if there is no sidechain available, a band set to External simply
+  keeps using the internal signal rather than going quiet.
+- **SC Mode: Split / Wide.** Split (the default, and the only behaviour
+  previous versions had) means the band only listens to its own frequency
+  region. Wide means it listens to the *whole* signal while still only
+  moving its own band - the usual way to make one band pump with the mix.
+  Listen follows whichever you pick, so you always hear what is really
+  triggering the band.
+- **Cleaner Saturation.** The per-band Saturation stage now uses an
+  anti-aliased waveshaper. Same character, noticeably less of the gritty
+  fold-back harmonics that a plain waveshaper produces on high-frequency
+  content - and still no added latency.
+- **Smoother Gain/Q.** With Gain/Q coupling on, the band's Q now glides with
+  the dynamic gain instead of stepping.
+- **An eleventh factory preset, Sidechain Carve**, demonstrating the new
+  routing.
+
+Both new per-band controls sit in the editor as combo boxes under each band's
+Type slot. Sessions saved by older versions load exactly as before, with both
+new controls at the settings that reproduce the old behaviour.
+
 ## What's new in v0.3.0
 
 A musical-voicing pass (see `docs/voicing-notes.md`) - measured where the
@@ -102,12 +146,14 @@ Every band's detector taps the signal right after Input Trim, *before* Band 1 - 
 | **Gain** | -12 - +12 | 0 | dB | The band's *static* gain - always applied, dynamic or not. Set this to your "at rest" EQ move; Range then adds or subtracts on top of it when the detector triggers. |
 | **Range** | -12 - +12 | 0 | dB | How far the band's gain can move dynamically, on top of Gain. **0 = a pure static EQ band** (no detector influence at all). Negative Range cuts as the signal gets louder past Threshold (the classic resonance-taming/de-essing move); positive Range boosts as it gets louder (an upward "duck-in" expansion move, useful for e.g. bringing out a pick attack only on hard-hit notes). |
 | **Thresh** | -60 - 0 | -26 / -28 / -26 / -24 / -22 / -20 (v0.3.0, per band - see table below) | dB | The detector level above which the dynamic move starts engaging. A soft knee centred on this value makes the transition in gradual rather than a hard switch - the knee's own width scales with Range (v0.2.0): `clamp(\|Range\| * 0.5, 2, 10)` dB, so shallow Range settings read gentler and full-depth (±12 dB) Range settings sound identical to v0.1.0's fixed 6 dB knee. |
-| **Attack** | 0.1 - 500 | 25 / 15 / 8 / 4 / 2 / 3 (v0.3.0, per band - see table below) | ms | How quickly the dynamic gain moves once the detector crosses Threshold. Fast attack catches transients hard; slower attack lets a brief peak through before reacting, which can sound more natural on percussive material. The 500 ms ceiling is meant for slow, musical tonal-balancing moves, not transient catching. |
+| **Attack** | 0.1 - 500 | 25 / 15 / 8 / 4 / 2 / 3 (v0.3.0, per band - see table below) | ms | How quickly the dynamic gain moves once the detector crosses Threshold. Fast attack catches transients hard; slower attack lets a brief peak through before reacting, which can sound more natural on percussive material. The 500 ms ceiling is meant for slow, musical tonal-balancing moves, not transient catching. **Since v0.4.0 this control is true across its whole range** - see "What's new in v0.4.0" above; before that, everything below ~50 ms behaved identically. |
 | **Release** | 5 - 1500 | 280 / 180 / 130 / 100 / 70 / 90 (v0.3.0, per band - see table below) | ms | How quickly the dynamic gain returns toward Gain once the detector drops back below Threshold. Fast release can pump audibly on sustained material; slow release smooths the return out but can hold a cut/boost into content that no longer needs it. |
 | **Listen** | Off / On | Off | | Solos that band's own detector signal - the bandpass-filtered, pre-EQ audio that's actually driving its dynamic move - in place of the normal program output, for auditioning exactly what triggers it. Exclusive: engaging Listen on one band disengages any other band's Listen. The full signal chain (including every band's own processing) keeps running underneath, so disengaging Listen never pops. |
 | **Auto Release** (v0.2.0) | Off / On | Off | | Program-dependent auto-release: when on, the *effective* release time for a given transition shortens automatically (never below this plugin's own 5 ms Release floor, never past the manual Release setting itself) whenever the signal's own envelope is already falling on its own - useful for letting a band relax faster on naturally-decaying material without giving up a slower, musical manual Release for sustained material. Automation/preset-only in v0.2.0 - no dedicated editor knob yet (roadmap M3). |
 | **Gain/Q** (v0.2.0) | Off / On | Off | | Gain/Q coupling: when on, the band's own filter Q widens (softens) proportionally to how far its *dynamic* gain currently sits toward Range - a gentler, more analog-style character at deeper dynamic moves. Static Gain never affects Q, only the dynamic component does. Automation/preset-only in v0.2.0 - no dedicated editor knob yet (roadmap M3). |
-| **Saturation** (v0.3.0) | Off / On | Off | | Gentle waveshaping: when on, a soft `tanh`-based drive is applied to the band's own output, but only while it's actively boosting (Gain + the dynamic contribution net positive) - a cutting or idle band is unaffected even with this on. Drive scales with how hard the band is boosting (barely-there near 0 dB, clearly audible but still soft-knee-shaped near +12 dB). Automation/preset-only in v0.3.0 - no dedicated editor knob yet (roadmap M3). |
+| **SC Source** (v0.4.0) | Internal / External | Internal | | Where this band's detector listens. **Internal** (the default, and every previous version's only behaviour) is the signal passing through the plugin, tapped before Band 1. **External** is the plugin's sidechain input - route something else to it in your host and this band moves in response to *that* instead, while still filtering the main signal. If your host provides no sidechain, or the sidechain input is left disabled, a band set to External falls back to Internal rather than going silent. No delay compensation is applied to the sidechain, so it must already be time-aligned by the host. |
+| **SC Mode** (v0.4.0) | Split / Wide | Split | | How much of the detector's source this band listens to. **Split** (the default) filters the detector input down to this band's own frequency region, so only content near Freq can trigger it - the surgical behaviour. **Wide** skips that filter, so the band responds to overall level across the whole spectrum while still only moving its own band. Wide is what you want when a band should breathe with the mix rather than police one resonance. Listen follows this setting, so you always audition the real trigger signal. |
+| **Saturation** (v0.3.0) | Off / On | Off | | Gentle waveshaping: when on, a soft drive is applied to the band's own output, but only while it's actively boosting (Gain + the dynamic contribution net positive) - a cutting or idle band is unaffected even with this on. Drive scales with how hard the band is boosting (barely-there near 0 dB, clearly audible but still soft-knee-shaped near +12 dB). Since v0.4.0 the waveshaper is anti-aliased, so it adds far less of the harsh fold-back grit that a plain waveshaper produces on high-frequency content, at no latency cost. Automation/preset-only - no dedicated editor knob yet (roadmap M3). |
 
 Per-band voicing defaults (v0.3.0, `docs/voicing-notes.md`) - tuned to each
 band's typical role along the existing frequency ladder, not a flat value
@@ -137,7 +183,7 @@ through the factory and user library alphabetically, `Save`/`Save As...` to
 write your own, `Delete` for user presets, `Import.../Export...` for single
 `.basilicapreset` files or `.zip` banks, and a menu (click the preset name)
 with a "Set current as default" entry for your own out-of-the-box starting
-point. Ten factory presets ship with v0.3.0 - see `docs/presets.md` for
+point. Eleven factory presets ship with v0.4.0 - see `docs/presets.md` for
 what each one does and why. User presets are stored per-user at
 `~/Library/Audio/Presets/Yves Vogl/Lancet/` on macOS
 (`%APPDATA%/Yves Vogl/Lancet/Presets/` on Windows).
