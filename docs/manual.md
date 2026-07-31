@@ -133,6 +133,108 @@ in --[Input Trim]--+--[pre-chain tap]--> each band's Detector (bandpass @ band f
 
 Every band's detector taps the signal right after Input Trim, *before* Band 1 - not that band's own serially-processed input - so a downstream band's gain move never perturbs an upstream band's detection, and no band's own move feeds back into triggering itself. See [`docs/architecture.md`](architecture.md) for the full engineering breakdown (gain-computer formula, detector selectivity, sub-block coefficient smoothing, Listen).
 
+## Under the hood
+
+### The per-sample gain path and the TPT SVF core
+
+Up to v0.3.0 a band's realised gain came from a 50 ms `juce::SmoothedValue`
+sitting *after* the gain computer - the detector could react in half a
+millisecond and the filter would still take 50 ms to catch up, so most of
+the shipped 0.1-500 ms Attack range did nothing audible. v0.4.0 deletes that
+smoother and evaluates the whole chain - detector envelope, dB conversion,
+soft-knee gain computer, Range clamp, filter gain - once per sample. The
+detector envelope *is* the smoother now, and there is no stepped-gain
+fallback for any band type.
+
+Deleting the smoother from a coefficient-rebuilding biquad would have been a
+zipper-noise generator on its own, so the filter core changed too. A
+direct-form biquad whose coefficients jump every sample is not a
+well-defined time-varying filter - its internal state means something
+different after each jump. Every band (bell, low shelf, high shelf) instead
+runs on `lnct::TptSvf`, a topology-preserving-transform (trapezoidal-
+integration) state-variable filter built from Andrew Simper's published
+Cytomic equations, with no third-party code vendored. Its two state
+variables are physical integrator outputs that keep their meaning no matter
+how the coefficients move, so gain can be modulated every sample without
+artefact. The bell's frequency warp is completely gain-independent -
+dynamic gain enters only as a scalar bandpass mix, never by re-tuning the
+centre frequency - and integrator state is kept in `double` even though the
+audio path is `float`, because the trapezoidal update's own cancellation
+loses digits in single precision at low frequency and high Q.
+
+The realised static response is unchanged by any of this: verified against
+an independent double-precision reference to better than -100 dBFS peak
+residual over ten seconds of broadband noise per setting, and against the
+analytic RBJ magnitude response to within ±0.05 dB across a band-type/gain/Q
+grid. At exactly 0 dB every gain-dependent mix scalar is *exactly* zero, so
+an idle band is bit-transparent by construction, with no branch and no
+special case.
+
+### Detector design
+
+In Split mode, the detector cascades **two** bandpass biquads at the band's
+own frequency/Q rather than one, because a single stage only reaches about
+-12 dB two octaves out at Q 1 - not enough headroom against a loud
+out-of-band tone falsely triggering the band. The cascade measures better
+than -24 dB, comfortably past the plugin's own >20 dB two-octave isolation
+bar. Stereo (or wider) input is **linked**: each cascade stage runs
+independently per channel with its own filter state, but the envelope
+follower is a single band-wide value fed by the loudest (max-abs) sample
+across channels at every instant - which avoids the stereo-image shift that
+fully independent per-channel gain reduction would introduce. There is no
+per-band unlink option. The envelope itself is a one-pole peak follower run
+**per sample** for correct ballistics timing; only the bandpass's own
+coefficients are throttled to sub-block granularity, never the envelope.
+
+### Auto-release: a dedicated fast reference envelope
+
+Auto Release (off by default) shortens a band's effective release whenever
+the signal's own envelope is already falling on its own, clamped so the
+result is always at least as fast as - never slower than - the manual
+Release setting. The detail worth knowing: the fall-rate measurement comes
+from a **second, dedicated, always-fast envelope** inside the detector
+(same Attack coefficient, but a fixed release tied to the plugin's own 5 ms
+floor), not from the main envelope. Deriving it from the main envelope does
+not work - a slow envelope is itself a low-passed view of the input,
+rate-limited to roughly its own time constant, so "how fast is the slow
+envelope falling" mostly measures the slow envelope's own coefficient back
+at itself. An earlier internal implementation attempt made exactly that
+mistake, and its output was measurably identical whether Auto Release was
+on or off.
+
+### Anti-aliased saturation, still at zero latency
+
+The optional per-band Saturation stage replaces a plain `tanh` waveshaper
+with a first-order antiderivative-antialiased (ADAA1) kernel of the same
+shape, computed as the difference quotient of `ln(cosh(x))` between
+consecutive samples - same harmonic character, measurably less fold-back,
+no oversampling stage and no added latency. The specification is
+deliberately relative rather than an absolute alias-floor claim; see
+"Latency and aliasing" below for the measured numbers and the reasoning.
+Saturation only ever engages while a band is actively boosting (static +
+dynamic gain net positive) - a cutting or idle band is bit-identical with it
+switched on.
+
+### Engineering hygiene
+
+- **Zero heap allocations on the audio thread**, proven under a replaced
+  allocator, including with the sidechain bus active and Auto Release /
+  Gain-Q / Saturation engaged on every band. Coefficient updates write a
+  stack-only `ArrayCoefficients` result directly into already-allocated
+  storage instead of calling `juce::dsp::IIR::Coefficients::makeXxx()`,
+  which heap-allocates a fresh object on every call.
+- **Idle work is skipped.** The detector bandpass and the SVF frequency
+  warp recompute only when the smoothed frequency/Q have actually moved
+  past an epsilon, and the per-sample SVF scalars are memoised on an exact
+  gain match, so a band sitting at a settled gain recomputes nothing and is
+  bit-transparent once its parameters are static.
+- **NaN/Inf recovery is designed in, including on the sidechain.** A
+  non-finite value would otherwise poison the SVF's integrator recursion
+  permanently; the filter snaps its state clean and returns 0, recovering
+  within the same block rather than needing a `reset()` - verified with a
+  NaN/Inf-poisoned sidechain and all six bands set to External, which
+  cannot silence or poison the main output.
+
 ## Parameter reference
 
 ### Per band (Band 1 - Band 6, identical controls unless noted)
@@ -202,3 +304,116 @@ always stay in English, matching every other Basilica Audio plugin.
 - **Positive Range (upward/duck-in) is the less obvious move** - try it on a low-Q high-frequency band to bring out pick attack or breath/consonant detail only on the notes that need it, rather than boosting the whole register (and its noise floor) all the time.
 - **Fast Attack + fast Release can pump audibly on sustained material** (bass, pads, sustained vocal notes) - if a band sounds unstable or "breathing," try a slower Release first before reaching for a narrower Q.
 - **Mix below 100% keeps the dynamic move's character while reducing its depth** - a quick way to dial back an over-aggressive Range setting without re-tuning every band's Threshold/Range from scratch.
+- **Reach for SC Mode: Wide when you want a band to breathe with the mix, not police one resonance** (v0.4.0). Split is the right default for surgical work - only content near Freq can trigger the band. Wide makes the band respond to overall level while still only moving its own frequency region, which is what you want for "duck the low-mids whenever the whole band hits" or for a band tracking a full-range sidechain source. A Wide band with a narrow Q is a perfectly sensible combination: the Q shapes *what moves*, the mode decides *what triggers it*.
+- **With an external sidechain, set Threshold against the sidechain's level, not the main signal's** (v0.4.0). Once SC Source is External the band is reacting to whatever your host routes in, so the level reaching Threshold has nothing to do with what Lancet is inserted on. Engage that band's Listen to hear the sidechain feed directly while you find the Threshold - Listen always auditions whatever the detector is actually hearing, including the sidechain.
+- **Time-align the sidechain in your host if it matters.** Lancet inserts no alignment delay anywhere (see "Latency and aliasing" below), so a sidechain that arrives late in your host arrives late at the detector too.
+- **Now that Attack is true, try it before you reach for anything else** (v0.4.0). If a band grabs too hard on transients, a slower Attack is a real control again rather than a no-op below ~50 ms - that is usually a better first move than widening Q or backing off Range.
+- **Saturation is only worth switching on where a band boosts.** It is scoped to boosting bands by design, so enabling it on a cutting de-esser band does nothing at all. Pair it with a modest positive Gain (and optionally a positive Range) on a body/warmth band.
+
+## Latency and aliasing
+
+**Lancet adds zero latency - always.** It reports 0 samples before and after
+your host prepares it, at every sample rate and block size, with every band
+engaged and with the sidechain bus enabled. That is verified by impulse
+response (the peak really comes back on sample 0), not merely reported, and
+there is no dry-path delay compensation anywhere in the plugin. Every filter
+in the signal path - the six bands and their detectors - is minimum-phase
+with no lookahead.
+
+Two v0.4.0 decisions keep it that way, deliberately:
+
+- **The Saturation stage is anti-aliased arithmetically rather than by
+  oversampling.** It uses a first-order antiderivative-antialiased
+  waveshaper of the same `tanh` shape the previous versions used, so it has
+  the same harmonic character with measurably less fold-back - and no
+  oversampling stage, which would have cost either latency or phase
+  distortion. Measured suppression of the dominant 30 kHz to 18 kHz fold at
+  48 kHz is 13.2 dB at -24 dBFS, 10.0 dB at -12 dBFS and 8.4 dB at -6 dBFS
+  input. **No absolute alias floor is claimed**, and that is honest rather
+  than coy: first-order treatment at the base sample rate does not earn one.
+  If you drive a band hard on very high-frequency content and want a
+  guaranteed absolute floor, that is what an oversampling plugin is for,
+  and oversampling costs latency.
+- **The external sidechain carries no alignment delay**, so it must already
+  be time-aligned by the host - the same requirement comparable dynamic EQs
+  have.
+
+**Sample rates and formats.** AU, VST3 and Standalone. Verified finite and
+zero-latency at 44.1, 48, 88.2, 96, 176.4 and 192 kHz, and across a
+sample-rate change mid-session. Mono and stereo main layouts are both
+supported; the sidechain input can be disabled, mono or stereo independently
+of the main layout, and anything wider than stereo on it is rejected rather
+than silently misinterpreted.
+
+## Sessions, presets and compatibility
+
+Sessions saved by any earlier version load cleanly, with every stored
+parameter value preserved exactly and every parameter added since then
+sitting at the default that reproduces the older behaviour. Concretely: a
+v0.1.0 session's values survive, the v0.2.0/v0.3.0 per-band toggles (Auto
+Release, Gain/Q, Saturation) come back off, and v0.4.0's twelve new per-band
+choices come back at Internal and Split - the only routing any previous
+version ever had.
+
+Saved state carries a schema-version stamp from v0.4.0 onward. A state
+without one is read as the older schema. Nothing needs converting today
+(every newer parameter's default *is* the older behaviour), but the stamp
+means a future release that genuinely does need to convert something has a
+reliable way to tell what it is reading.
+
+**One caveat, and it is the important one:** while your stored *values* are
+untouched, a session that used a non-zero Range together with a fast Attack
+will *sound* different under v0.4.0, because the Attack path was broken
+before and is now fixed. See "What's new in v0.4.0" at the top of this
+document. The same applies to the ten factory presets that predate v0.4.0 -
+none of their stored values changed, but the ones whose names promise speed
+(De-Ess Stack, Transient Snare Crack, Fast-Recovery Demo) now behave the way
+their names always claimed.
+
+## Known limitations
+
+Stated plainly, because knowing them is more useful than not:
+
+- **The GUI is a functional slider/toggle/combo editor.** The custom
+  vector-drawn interface with per-band gain-reduction needles is a later
+  milestone. The plugin already measures what those needles will show, and
+  that measurement is verified against the gain reduction actually present
+  in the output - but nothing displays it yet.
+- **Auto Release, Gain/Q and Saturation have no editor controls.** All three
+  are fully automatable and fully preset-controllable; dedicated toggles
+  arrive with the GUI pass. SC Source and SC Mode are the deliberate
+  exceptions, because a sidechain routing you cannot select from the editor
+  is not usable at all.
+- **Q is ignored in Shelf mode.** Band 1's Low Shelf and Band 6's High Shelf
+  always use the standard flat shelf slope (Q 0.707), for both the audible
+  filter *and* its matched detector bandpass.
+- **No absolute aliasing floor is specified** for the Saturation stage - see
+  "Latency and aliasing" above.
+- **Detection is stereo-linked with no unlink**, and there is no per-band
+  M/S or L/R placement - see "Detector design" under "Under the hood" above.
+- **There is no ratio control, by design.** Above the knee the gain moves
+  1:1 with how far the detector has overshot Threshold, until it reaches
+  Range - which acts as a hard ceiling on the dynamic depth. Range is the
+  "how far can this move" control; the knee (whose width scales with Range)
+  provides the ramp-in.
+- **The per-band voicing defaults are engineering judgment, not ear-tuned
+  against reference material.** The *direction* of the v0.3.0 voicing table
+  (low frequency slow and gentle, high frequency fast and surgical) is an
+  established mixing convention, and the resulting ballistics *ordering* is
+  measured and frozen by the test suite. The exact numbers, and the
+  Saturation drive curve, are tuned judgment - not validated against real
+  vocal/guitar/mix material and not calibrated against any other product.
+  A by-ear pass against reference-class dynamic EQs on real programme
+  material is a named, still-open item; see `docs/voicing-notes.md` for the
+  full honesty section on exactly which numbers are which.
+- **Not yet in the plugin, tracked for later releases:** opt-in spectral
+  resonance suppression, per-band M/S and L/R placement with stereo unlink,
+  optional HF de-cramping (deliberately deferred, because de-cramping
+  changes the *static* response of existing sessions), wider Range/Q/Release
+  ranges (which need their own migration story, since remapping a parameter
+  range changes host automation-curve mapping), lookahead, per-band ratio,
+  linear phase, more than six bands, and a spectrum-analyzer/EQ-curve
+  display.
+- **Lancet is pre-1.0 and its binaries are currently unsigned.** Breaking
+  changes are possible until v1.0.0; signing, notarization and installers
+  are a later milestone. See `README.md`.
