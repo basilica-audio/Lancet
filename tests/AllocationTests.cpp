@@ -7,6 +7,68 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <new>
+
+//==============================================================================
+// Suite-wide hardening wave (2026-07-31): the guard mechanism itself was
+// never self-verified anywhere in this file (or elsewhere in the suite) -
+// every TEST_CASE below only ever checks `guard.count() == 0`, which would
+// read exactly the same whether the guard is working correctly OR is
+// silently broken (e.g. by a future edit to AllocationGuard.cpp that stops
+// routing through the replaced operator new). This closes that gap.
+//
+// The canary allocation deliberately goes through a direct call to
+// ::operator new, not a `new`/`delete` expression. [expr.new] explicitly
+// permits an implementation to omit the allocation of a new-expression
+// whose storage is never observably used, and Clang/MSVC do exactly that at
+// higher optimisation levels - the exact defect class already found and
+// fixed in sibling plugins (Requiem's tests/EngineTests.cpp:481). A direct
+// ::operator new call is a plain function call, so that elision permission
+// does not apply, and the volatile write forces the returned storage to be
+// observably used. It is also written outside any Catch2 assertion macro:
+// wrapping it in CHECK()/REQUIRE() risks the macro's own internal
+// allocations polluting the count, which would make a passing self-check
+// prove nothing about the canary specifically.
+TEST_CASE ("TestAlloc::AllocationGuard: the guard itself fires on ordinary heap allocations "
+           "and stays silent on pure stack/register arithmetic",
+           "[dsp][rt-safety][alloc][self-test]")
+{
+    // Both guarded regions below contain ONLY the raw allocation/arithmetic
+    // - no CHECK()/REQUIRE() call runs while the guard is still armed, since
+    // Catch2's own assertion macros are not guaranteed allocation-free (see
+    // the file comment above) and would corrupt the very count they are
+    // meant to verify. The guard's count() is a static read of a counter
+    // that outlives the guard's own destruction, so asserting on it after
+    // the scope closes is exactly as accurate and does not have this
+    // problem.
+    std::size_t countAfterAllocation = 0;
+
+    {
+        TestAlloc::AllocationGuard guard;
+
+        auto* deliberate = static_cast<int*> (::operator new (sizeof (int)));
+        *static_cast<volatile int*> (deliberate) = 7;
+        ::operator delete (deliberate);
+
+        countAfterAllocation = guard.count();
+    }
+
+    CHECK (countAfterAllocation >= 1);
+
+    std::size_t countAfterArithmetic = 0;
+
+    {
+        TestAlloc::AllocationGuard guard;
+        volatile auto sum = 0.0f;
+
+        for (int i = 0; i < 1000; ++i)
+            sum = sum + static_cast<float> (i);
+
+        countAfterArithmetic = guard.count();
+    }
+
+    CHECK (countAfterArithmetic == 0);
+}
 
 // Permanent audio-thread allocation regression guard, added for the v0.2.0
 // deep-dive pass (docs/design-brief.md). Neither pluginval nor auval do
