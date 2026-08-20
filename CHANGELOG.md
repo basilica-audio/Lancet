@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Per-band default Thresholds are now calibrated by measurement** (the final
+  issue #4 voicing item, `docs/voicing-notes.md` Addendum): each band's default
+  Threshold is set to that band's own measured detector level under a defined
+  programme-level anchor (band-limited 20 Hz–20 kHz pink noise at -18 dBFS RMS,
+  the common alignment-level convention), rounded to 1 dB — Band 1: -26 → **-24 dB**,
+  Band 2: -28 → **-25 dB**, Band 3: -26 → **-24 dB**, Band 4: -24 dB (unchanged),
+  Band 5: -22 → **-24 dB**, Band 6: -20 → **-24 dB**. Rationale: the detector's
+  constant-Q bandpass on pink noise settles at ≈ -24 dBFS for *every* band
+  (equal energy per octave × frequency-independent relative bandwidth), so the
+  v0.3.0 spread — chosen, per that release's own honesty section, "to spread
+  evenly between -20 and -28" without a measurement — accidentally produced the
+  opposite of its intent: Band 2 was already 3.2 dB into overshoot at reference
+  level while Band 6 needed material 4.3 dB above reference to move at all, a
+  7.5 dB accidental spread in engagement loudness. Every band now begins
+  engaging at the same programme loudness out of the box.
+
+  **This changes no default sound**: Range still defaults to 0 dB on every band,
+  so the default state remains bit-transparent (the unchanged
+  `tests/NullTests.cpp` guarantee) — only the point at which a freshly dialed-in
+  Range starts acting moves. Sessions and presets are unaffected (they store
+  their own Threshold values; the tolerant-import guarantee is unchanged).
+  Measured and frozen by the new `tests/ThresholdCalibrationTests.cpp`: per-band
+  |measured − default| ≤ 1 dB at 44.1/48 kHz (1.5 dB at 96 kHz), cross-band
+  onset-gap spread ≤ 1.5 dB, and a default-band engagement proof (gentle,
+  sub-1-dB-average action at the anchor with the design brief's sourced -6 dB
+  starting Range; zero action 12 dB below it).
+
+### Added
+
+- **Control-law freeze** (`tests/ControlLawTests.cpp`): the knob-travel analysis
+  for issue #4 *confirmed* the shipped mappings rather than changing them — the
+  log Freq range centres on the 630 Hz default-on demo band (mid-travel =
+  √(20·20000) = 632.5 Hz), the log Attack/Release ranges put the design brief's
+  sourced starting recipe (10 ms / ~100 ms) at 0.53–0.54 travel, the Q skew
+  centres the musical 0.7–4 window, and every per-band voiced default sits in
+  the middle half of its knob's travel. These properties are now pinned by
+  tests, because a silent skew/range edit would re-curve every host automation
+  lane written against the parameter (the automation-mapping hazard the v0.4.0
+  state-schema note documents for the still-deferred Range/Q range widening).
+- `docs/voicing-notes.md` Addendum: the calibration method, the
+  old-vs-measured-vs-new table, considered-and-rejected items (defaulting the
+  outer bands' Type to Shelf would ship a dead Q knob, violating the binding
+  "readability of control state" principle), and an honesty section (the anchor
+  is a convention-backed proxy, not per-genre programme material; the issue's
+  original by-ear reference-class A/B remains undone for lack of access, named
+  rather than silently dropped). Catch2 suite: 148 → 155 cases.
+
 ## [0.4.0] — 2026-07-27
 
 ### Fixed

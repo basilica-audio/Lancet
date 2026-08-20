@@ -30,11 +30,13 @@ namespace
     }
 
     // Checks Gain/Range (unchanged, identical across every band) and the
-    // per-band-voiced Q/Threshold/Attack/Release (v0.3.0, docs/
-    // voicing-notes.md - was a flat Q 1.0/Threshold -30 dB/Attack 5 ms/
-    // Release 150 ms for every band pre-v0.3.0) against the documented
-    // per-band table. Freq's default differs per band too and is checked
-    // separately.
+    // per-band-voiced Q/Attack/Release (v0.3.0, docs/voicing-notes.md - was
+    // a flat Q 1.0/Attack 5 ms/Release 150 ms for every band pre-v0.3.0)
+    // plus the measurement-calibrated Threshold defaults (issue #4 pass,
+    // docs/voicing-notes.md Addendum; the calibration property itself is
+    // frozen by tests/ThresholdCalibrationTests.cpp - this file only pins
+    // the resulting numbers) against the documented per-band table. Freq's
+    // default differs per band too and is checked separately.
     void checkBandDefaultsAndRanges (juce::AudioProcessorValueTreeState& apvts,
                                       const char* qId, const char* gainId, const char* rangeId,
                                       const char* thresholdId, const char* attackId, const char* releaseId,
@@ -246,21 +248,21 @@ TEST_CASE ("Processor instantiates with the expected parameters", "[processor][p
     {
         checkBandDefaultsAndRanges (apvts, ParamIDs::b1Q, ParamIDs::b1Gain, ParamIDs::b1Range,
                                      ParamIDs::b1Threshold, ParamIDs::b1Attack, ParamIDs::b1Release,
-                                     0.9f, -26.0f, 25.0f, 280.0f);
+                                     0.9f, -24.0f, 25.0f, 280.0f);
     }
 
     SECTION ("Band 2: voiced defaults/ranges (mud/box resonance - vocal & guitar body)")
     {
         checkBandDefaultsAndRanges (apvts, ParamIDs::b2Q, ParamIDs::b2Gain, ParamIDs::b2Range,
                                      ParamIDs::b2Threshold, ParamIDs::b2Attack, ParamIDs::b2Release,
-                                     1.1f, -28.0f, 15.0f, 180.0f);
+                                     1.1f, -25.0f, 15.0f, 180.0f);
     }
 
     SECTION ("Band 3: voiced defaults/ranges (general midrange presence)")
     {
         checkBandDefaultsAndRanges (apvts, ParamIDs::b3Q, ParamIDs::b3Gain, ParamIDs::b3Range,
                                      ParamIDs::b3Threshold, ParamIDs::b3Attack, ParamIDs::b3Release,
-                                     1.0f, -26.0f, 8.0f, 130.0f);
+                                     1.0f, -24.0f, 8.0f, 130.0f);
     }
 
     SECTION ("Band 4: voiced defaults/ranges (vocal presence / guitar edge)")
@@ -274,14 +276,14 @@ TEST_CASE ("Processor instantiates with the expected parameters", "[processor][p
     {
         checkBandDefaultsAndRanges (apvts, ParamIDs::b5Q, ParamIDs::b5Gain, ParamIDs::b5Range,
                                      ParamIDs::b5Threshold, ParamIDs::b5Attack, ParamIDs::b5Release,
-                                     1.4f, -22.0f, 2.0f, 70.0f);
+                                     1.4f, -24.0f, 2.0f, 70.0f);
     }
 
     SECTION ("Band 6: voiced defaults/ranges (air / fizz recovery shelf)")
     {
         checkBandDefaultsAndRanges (apvts, ParamIDs::b6Q, ParamIDs::b6Gain, ParamIDs::b6Range,
                                      ParamIDs::b6Threshold, ParamIDs::b6Attack, ParamIDs::b6Release,
-                                     1.0f, -20.0f, 3.0f, 90.0f);
+                                     1.0f, -24.0f, 3.0f, 90.0f);
     }
 
     SECTION ("Global: In/Out Trim and Mix defaults/ranges")
