@@ -1,4 +1,141 @@
-# Lancet v0.3.0 — voicing notes
+# Lancet — voicing notes
+
+## Addendum (unreleased): measured threshold calibration and control-law freeze — closing issue #4
+
+Scope: the final pass on issue #4, layered on top of the v0.3.0 pass
+documented in the sections below (which remain unchanged as the historical
+record of that release; their Threshold reasoning is superseded by this
+addendum).
+
+### A.1 Threshold defaults are now calibrated by measurement
+
+The v0.3.0 honesty section (§3, below) named the per-band Threshold defaults
+as the softest-sourced numbers of that pass — "chosen mostly to spread evenly
+between -20 dB and -28 dB rather than from any specific measurement" — and
+its §4 explicitly asked for real-material validation of exactly these
+numbers. This pass performs that validation with a defined, reproducible
+programme-level anchor and finds the v0.3.0 spread was not just unsourced but
+**inverted relative to its own intent**.
+
+**The anchor**: band-limited (20 Hz – 20 kHz) pink noise at -18 dBFS RMS —
+pink noise as the standard broadband programme proxy (equal energy per
+octave, roughly the long-term average tilt of mixed music), -18 dBFS RMS as
+the common digital alignment-level convention. Synthesised in the frequency
+domain (|X| ∝ 1/√f, seeded random phases) so the spectrum is exactly pink at
+every sample rate measured.
+
+**The measurement**: each band's own shipped Detector (Split-mode cascaded
+bandpass at the band's default Freq/Q, peak envelope at the band's default
+Attack/Release) was fed the anchor and its settled envelope level averaged
+over ~10 s. Because the detector bandpass is constant-Q (relative bandwidth
+independent of centre frequency) and pink noise carries equal energy per
+octave, **every band sees approximately the same in-band level at the
+anchor** — measured ≈ -24 dBFS across all six bands, stable within ±0.3 dB
+across 44.1/48/96 kHz (the largest outlier is Band 6 at 96 kHz, +0.7 dB from
+reduced bilinear frequency warping at 10 kHz):
+
+| Band | v0.3.0 Threshold | Measured detector level at anchor (48 kHz) | New Threshold |
+|---|---|---|---|
+| 1 (100 Hz) | -26 dB | -24.1 dBFS | **-24 dB** |
+| 2 (250 Hz) | -28 dB | -24.8 dBFS | **-25 dB** |
+| 3 (630 Hz) | -26 dB | -23.9 dBFS | **-24 dB** |
+| 4 (1.6 kHz) | -24 dB | -23.9 dBFS | **-24 dB** |
+| 5 (4 kHz) | -22 dB | -24.3 dBFS | **-24 dB** |
+| 6 (10 kHz) | -20 dB | -24.3 dBFS | **-24 dB** |
+
+**What the old spread actually did**: v0.3.0 intended thresholds to "engage
+a bit later climbing the ladder". But since every band's detector sits at
+≈ -24 dBFS at reference level, the -28…-20 dB spread translated into onset
+*loudness* differences of the opposite shape: Band 2 (-28 dB) was already
+3.2 dB into overshoot — actively working — on reference-level material, while
+Band 6 (-20 dB) needed material 4.3 dB *above* reference before moving at
+all. A 7.5 dB accidental spread in engagement loudness, in a direction nobody
+chose.
+
+**The new rule**: each band's default Threshold equals its own measured
+detector level at the anchor, rounded to the nearest 1 dB. Every band
+therefore begins engaging at the same programme loudness out of the box, and
+the per-band 1 dB differences that remain (Band 2's -25 dB) are *measured*
+consequences of that band's Q/ballistics, not aesthetic spread. At the anchor
+itself a band with Range dialed in engages gently through the soft knee
+(measured: Band 3 at the design brief's sourced -6 dB starting Range averages
+well under 1 dB of gain reduction at the anchor, and applies none at all
+12 dB below it).
+
+**Measured, not just asserted**: `tests/ThresholdCalibrationTests.cpp`
+re-measures the real shipped Detector against the real shipped defaults
+(read from a fresh processor's APVTS, not hand-copied constants) at
+44.1/48/96 kHz and freezes (a) each band's |measured − default| within
+1 dB (1.5 dB at 96 kHz), (b) the cross-band onset-gap spread within 1.5 dB —
+the actual uniformity property, pinned directly — and (c) the
+engages-at-anchor / idle-12-dB-below behaviour of the default-on demo band
+at the design brief's own sourced starting Range.
+
+### A.2 Control-law analysis: confirmed and frozen, not changed
+
+Issue #4's "sensible defaults" scope includes where on the *knob's travel*
+the musically useful zone sits. Analysis of the shipped control laws (all
+values read from the real parameter objects):
+
+- **Freq** (log, 20 Hz – 20 kHz): mid-travel is the geometric mean
+  √(20·20000) = 632.5 Hz — within 0.4% of the default-on demo band's 630 Hz.
+- **Attack** (log, 0.1 – 500 ms): mid-travel √(0.1·500) = 7.1 ms; the design
+  brief's own sourced starting recipe (10 ms) sits at 0.54 travel.
+- **Release** (log, 5 – 1500 ms): mid-travel √(5·1500) = 86.6 ms; the sourced
+  ~100 ms recipe value sits at 0.53 travel.
+- **Q** (0.4 skew, 0.3 – 12): mid-travel Q = 2.37, with the musically common
+  0.7 – 4 window straddling the knob's centre (0.26 – 0.63 travel).
+- Every per-band Q/Threshold/Attack/Release default sits within the middle
+  half (0.25 – 0.75) of its knob's travel.
+
+Conclusion: the existing ranges and skews already put the useful zone at the
+centre of the knob — **no range or skew was changed** (deliberately: a
+mapping change silently re-curves existing host automation lanes, the exact
+hazard the v0.4.0 state-schema note names for the still-deferred Range/Q
+range widening). What changed is that none of this was previously *pinned*:
+`tests/ControlLawTests.cpp` now freezes the mid-travel values, the
+recipe-at-mid-travel property, and the middle-half-of-travel invariant, so an
+accidental future skew edit fails a test instead of silently bending every
+automation curve.
+
+### A.3 What was considered and rejected
+
+- **Defaulting Band 1/Band 6's Type to Shelf** (their documented roles are
+  shelf-shaped, and the v0.3.0 table labels them "(Low Shelf)"/"(High
+  Shelf)"): rejected. Q is ignored in Shelf mode, so both outer bands would
+  ship with a dead Q knob — a direct violation of this plugin's binding
+  "readability of control state" design principle (a control that silently
+  does nothing at default). The shelf roles remain one Type click away, and
+  at default (Gain/Range 0) the choice is inaudible anyway.
+- **Widening the Range/Q parameter ranges**: still deferred, unchanged —
+  needs the state-schema-3 automation remap (see the v0.4.0 CHANGELOG note).
+
+### A.4 Honesty section
+
+- **The anchor is a proxy, not programme material.** Pink noise at -18 dBFS
+  RMS is a defined, reproducible, convention-backed stand-in for "typical
+  mix level and tilt", and the calibration replaces numbers that were never
+  measured against *anything*. It does not claim per-genre optimality: real
+  mixes deviate from pink (most fall off faster above ~5 kHz, many carry
+  more low end), so on real material the high bands will in practice engage
+  somewhat later than the low bands at the same programme loudness — a
+  deviation that now at least has a defined zero point.
+- **The issue's original "by-ear comparison against established dynamic
+  EQs" was not performed** — same structural limitation the v0.3.0 honesty
+  section (§3, below) already names: no access to the reference plugins for
+  a direct A/B. This pass closes issue #4 with measured calibration as the
+  validation mechanism; a human listening session against the reference
+  class remains worthwhile for any future voicing revisit, and the per-band
+  Attack/Release numbers (v0.3.0 §1.1) remain judgment-tuned.
+- **The "engages gently" window in A.1's engine-level proof (mean gain
+  reduction between 0.1 and 3 dB at the anchor)** is a deliberately wide
+  acceptance band chosen to pin the qualitative behaviour (active, nowhere
+  near the Range rail) without over-fitting the test to one noise
+  realisation.
+
+---
+
+# v0.3.0 — voicing notes (historical)
 
 Scope: issue #4, "musical defaults and character pass" (M2 milestone). This
 document records what was changed for v0.3.0, what was *measured* (backed

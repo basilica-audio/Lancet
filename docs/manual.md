@@ -247,7 +247,7 @@ switched on.
 | **Q** | 0.3 - 12 | 0.9 / 1.1 / 1.0 / 1.2 / 1.4 / 1.0 (v0.3.0, per band - see table below) | | How narrow (high Q) or broad (low Q) the band is. **Ignored in Shelf mode**, which always uses a fixed, standard shelf slope (Q = 0.707) regardless of this setting. |
 | **Gain** | -12 - +12 | 0 | dB | The band's *static* gain - always applied, dynamic or not. Set this to your "at rest" EQ move; Range then adds or subtracts on top of it when the detector triggers. |
 | **Range** | -12 - +12 | 0 | dB | How far the band's gain can move dynamically, on top of Gain. **0 = a pure static EQ band** (no detector influence at all). Negative Range cuts as the signal gets louder past Threshold (the classic resonance-taming/de-essing move); positive Range boosts as it gets louder (an upward "duck-in" expansion move, useful for e.g. bringing out a pick attack only on hard-hit notes). |
-| **Thresh** | -60 - 0 | -26 / -28 / -26 / -24 / -22 / -20 (v0.3.0, per band - see table below) | dB | The detector level above which the dynamic move starts engaging. A soft knee centred on this value makes the transition in gradual rather than a hard switch - the knee's own width scales with Range (v0.2.0): `clamp(\|Range\| * 0.5, 2, 10)` dB, so shallow Range settings read gentler and full-depth (±12 dB) Range settings sound identical to v0.1.0's fixed 6 dB knee. |
+| **Thresh** | -60 - 0 | -24 / -25 / -24 / -24 / -24 / -24 (calibrated, per band - see table below) | dB | The detector level above which the dynamic move starts engaging. A soft knee centred on this value makes the transition in gradual rather than a hard switch - the knee's own width scales with Range (v0.2.0): `clamp(\|Range\| * 0.5, 2, 10)` dB, so shallow Range settings read gentler and full-depth (±12 dB) Range settings sound identical to v0.1.0's fixed 6 dB knee. |
 | **Attack** | 0.1 - 500 | 25 / 15 / 8 / 4 / 2 / 3 (v0.3.0, per band - see table below) | ms | How quickly the dynamic gain moves once the detector crosses Threshold. Fast attack catches transients hard; slower attack lets a brief peak through before reacting, which can sound more natural on percussive material. The 500 ms ceiling is meant for slow, musical tonal-balancing moves, not transient catching. **Since v0.4.0 this control is true across its whole range** - see "What's new in v0.4.0" above; before that, everything below ~50 ms behaved identically. |
 | **Release** | 5 - 1500 | 280 / 180 / 130 / 100 / 70 / 90 (v0.3.0, per band - see table below) | ms | How quickly the dynamic gain returns toward Gain once the detector drops back below Threshold. Fast release can pump audibly on sustained material; slow release smooths the return out but can hold a cut/boost into content that no longer needs it. |
 | **Listen** | Off / On | Off | | Solos that band's own detector signal - the bandpass-filtered, pre-EQ audio that's actually driving its dynamic move - in place of the normal program output, for auditioning exactly what triggers it. Exclusive: engaging Listen on one band disengages any other band's Listen. The full signal chain (including every band's own processing) keeps running underneath, so disengaging Listen never pops. |
@@ -257,18 +257,28 @@ switched on.
 | **SC Mode** (v0.4.0) | Split / Wide | Split | | How much of the detector's source this band listens to. **Split** (the default) filters the detector input down to this band's own frequency region, so only content near Freq can trigger it - the surgical behaviour. **Wide** skips that filter, so the band responds to overall level across the whole spectrum while still only moving its own band. Wide is what you want when a band should breathe with the mix rather than police one resonance. Listen follows this setting, so you always audition the real trigger signal. |
 | **Saturation** (v0.3.0) | Off / On | Off | | Gentle waveshaping: when on, a soft drive is applied to the band's own output, but only while it's actively boosting (Gain + the dynamic contribution net positive) - a cutting or idle band is unaffected even with this on. Drive scales with how hard the band is boosting (barely-there near 0 dB, clearly audible but still soft-knee-shaped near +12 dB). Since v0.4.0 the waveshaper is anti-aliased, so it adds far less of the harsh fold-back grit that a plain waveshaper produces on high-frequency content, at no latency cost. Automation/preset-only - no dedicated editor knob yet (roadmap M3). |
 
-Per-band voicing defaults (v0.3.0, `docs/voicing-notes.md`) - tuned to each
-band's typical role along the existing frequency ladder, not a flat value
-repeated across every band:
+Per-band voicing defaults (`docs/voicing-notes.md`) - Q/Attack/Release tuned
+to each band's typical role along the existing frequency ladder (v0.3.0),
+Threshold calibrated by measurement so that every band begins engaging at the
+same programme loudness (issue #4 calibration pass - see below):
 
 | Band | Freq | Role | Q | Threshold | Attack | Release |
 |---|---|---|---|---|---|---|
-| 1 | 100 Hz (Low Shelf) | Boom/sub control | 0.9 | -26 dB | 25 ms | 280 ms |
-| 2 | 250 Hz | Mud/box resonance (vocal & guitar body) | 1.1 | -28 dB | 15 ms | 180 ms |
-| 3 | 630 Hz | General midrange presence (default-on demo band) | 1.0 | -26 dB | 8 ms | 130 ms |
+| 1 | 100 Hz (Low Shelf) | Boom/sub control | 0.9 | -24 dB | 25 ms | 280 ms |
+| 2 | 250 Hz | Mud/box resonance (vocal & guitar body) | 1.1 | -25 dB | 15 ms | 180 ms |
+| 3 | 630 Hz | General midrange presence (default-on demo band) | 1.0 | -24 dB | 8 ms | 130 ms |
 | 4 | 1600 Hz | Vocal presence / guitar edge | 1.2 | -24 dB | 4 ms | 100 ms |
-| 5 | 4000 Hz | Sibilance / pick attack / harshness | 1.4 | -22 dB | 2 ms | 70 ms |
-| 6 | 10000 Hz (High Shelf) | Air / fizz recovery | 1.0 | -20 dB | 3 ms | 90 ms |
+| 5 | 4000 Hz | Sibilance / pick attack / harshness | 1.4 | -24 dB | 2 ms | 70 ms |
+| 6 | 10000 Hz (High Shelf) | Air / fizz recovery | 1.0 | -24 dB | 3 ms | 90 ms |
+
+Each band's default Threshold equals that band's own measured detector level
+under a -18 dBFS RMS pink-noise programme anchor (the common digital
+alignment-level convention), so at typical mix level every band sits right at
+the edge of engaging: dial in a Range and the band immediately starts working
+on anything at or above normal programme loudness, on every band alike. Run
+material hotter or colder than that convention (or into an Input Trim
+adjustment) and the engagement point shifts with it - Threshold remains an
+ordinary, per-band control; only its *default* is calibrated.
 
 ### Global
 

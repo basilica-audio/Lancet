@@ -153,6 +153,24 @@ insertion loss (see `tests/DetectorTests.cpp`'s own tolerance on this) so
 the measurement compares against the gain computer's true internal
 overshoot rather than the raw input signal's nominal dBFS.
 
+### Threshold defaults: calibrated to a measured programme anchor (issue #4)
+
+The per-band *default* Threshold values are not aesthetic spread: each equals
+that band's own measured detector level under a -18 dBFS RMS band-limited
+pink-noise anchor, rounded to 1 dB, so every band's dynamic move begins
+engaging at the same programme loudness out of the box. The measurement
+exploits a structural property of this architecture: the detector bandpass is
+constant-Q and pink noise has equal energy per octave, so all six bands
+settle at ≈ -24 dBFS under the anchor regardless of centre frequency. Full
+reasoning, the old-vs-measured-vs-new table, and honesty notes in
+`docs/voicing-notes.md` (Addendum); frozen as a live measurement (not a
+constant table) by `tests/ThresholdCalibrationTests.cpp`. The control *laws*
+(log Freq/Attack/Release mappings, the Q skew) were analysed in the same
+pass, confirmed rather than changed, and are pinned by
+`tests/ControlLawTests.cpp` — a mapping change would silently re-curve
+existing host automation lanes, which is exactly why the still-deferred
+Range/Q range widening waits for a state-schema bump.
+
 ### v0.2.0: gain/Q coupling
 
 `bN_gainQ` (opt-in, off by default) widens the *main filter's* own

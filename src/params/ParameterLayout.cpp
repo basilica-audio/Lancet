@@ -43,12 +43,12 @@ namespace
         const char* scMode;
     };
 
-    // v0.3.0 (docs/voicing-notes.md): per-band default Q/Threshold/Attack/
-    // Release, tuned to each band's typical role rather than the flat,
-    // identical-across-all-bands v0.1/v0.2 defaults (Q 1.0, Threshold
-    // -30 dB, Attack 5 ms, Release 150 ms everywhere). Range stays 0 dB for
-    // every band regardless (a band must not move until the user engages it
-    // - see docs/design-brief.md's own "zero-state is correct" reasoning,
+    // v0.3.0 (docs/voicing-notes.md): per-band default Q/Attack/Release,
+    // tuned to each band's typical role rather than the flat,
+    // identical-across-all-bands v0.1/v0.2 defaults (Q 1.0, Attack 5 ms,
+    // Release 150 ms everywhere). Range stays 0 dB for every band
+    // regardless (a band must not move until the user engages it - see
+    // docs/design-brief.md's own "zero-state is correct" reasoning,
     // unchanged here), so none of this is audible until a Range is dialed
     // in - but once it is, each band now starts from ballistics that suit
     // its documented role (low-frequency boom/resonance control moves
@@ -57,6 +57,21 @@ namespace
     // (these are engineering judgment tuned to the existing per-band
     // frequency ladder, not sourced from a specific reference plugin
     // manual).
+    //
+    // Threshold defaults (issue #4 calibration pass, docs/voicing-notes.md
+    // §"Threshold calibration"): each band's default Threshold is set to
+    // that band's own measured detector level under a -18 dBFS RMS
+    // band-limited (20 Hz - 20 kHz) pink-noise programme anchor, so every
+    // band begins engaging at the same programme loudness. Measurement
+    // (frozen by tests/ThresholdCalibrationTests.cpp): a constant-Q
+    // bandpass detector on pink noise sees ~= the same in-band level at any
+    // centre frequency (pink noise has equal energy per octave and the
+    // detector's relative bandwidth is frequency-independent), ~= -24 dBFS
+    // for every band at the anchor. The v0.3.0 spread (-28 dB .. -20 dB)
+    // was chosen without that measurement and accidentally produced the
+    // OPPOSITE of its intent: Band 2 (-28 dB) sat 3 dB into overshoot at
+    // reference level while Band 6 (-20 dB) needed material 4 dB above
+    // reference to move at all.
     struct BandVoicing
     {
         float q;
@@ -122,8 +137,10 @@ namespace
             0.0f,
             juce::AudioParameterFloatAttributes().withLabel ("dB")));
 
-        // Detector threshold: -60 - 0 dB, per-band default (v0.3.0,
-        // docs/voicing-notes.md - was a flat -30 dB for every band).
+        // Detector threshold: -60 - 0 dB, per-band default calibrated to the
+        // measured pink-noise programme anchor (issue #4 pass - see the
+        // BandVoicing comment above; was a flat -30 dB pre-v0.3.0 and an
+        // unmeasured -28..-20 dB spread in v0.3.0).
         layout.add (std::make_unique<juce::AudioParameterFloat> (
             juce::ParameterID { ids.threshold, 1 },
             labelPrefix + " Threshold",
@@ -235,21 +252,21 @@ namespace lnct
                               ParamIDs::b1Range, ParamIDs::b1Threshold, ParamIDs::b1Attack, ParamIDs::b1Release, ParamIDs::b1Listen,
                               ParamIDs::b1AutoRelease, ParamIDs::b1GainQ, ParamIDs::b1Sat, ParamIDs::b1ScSource, ParamIDs::b1ScMode },
                             "Band 1", 100.0f, false, "Low Shelf",
-                            { 0.9f, -26.0f, 25.0f, 280.0f }); // boom/sub control: slow, gentle
+                            { 0.9f, -24.0f, 25.0f, 280.0f }); // boom/sub control: slow, gentle
 
         addBandParameters (layout,
                             { ParamIDs::b2On, nullptr, ParamIDs::b2Freq, ParamIDs::b2Q, ParamIDs::b2Gain,
                               ParamIDs::b2Range, ParamIDs::b2Threshold, ParamIDs::b2Attack, ParamIDs::b2Release, ParamIDs::b2Listen,
                               ParamIDs::b2AutoRelease, ParamIDs::b2GainQ, ParamIDs::b2Sat, ParamIDs::b2ScSource, ParamIDs::b2ScMode },
                             "Band 2", 250.0f, false, {},
-                            { 1.1f, -28.0f, 15.0f, 180.0f }); // mud/box resonance: vocal & guitar body
+                            { 1.1f, -25.0f, 15.0f, 180.0f }); // mud/box resonance: vocal & guitar body
 
         addBandParameters (layout,
                             { ParamIDs::b3On, nullptr, ParamIDs::b3Freq, ParamIDs::b3Q, ParamIDs::b3Gain,
                               ParamIDs::b3Range, ParamIDs::b3Threshold, ParamIDs::b3Attack, ParamIDs::b3Release, ParamIDs::b3Listen,
                               ParamIDs::b3AutoRelease, ParamIDs::b3GainQ, ParamIDs::b3Sat, ParamIDs::b3ScSource, ParamIDs::b3ScMode },
                             "Band 3", 630.0f, true, {},
-                            { 1.0f, -26.0f, 8.0f, 130.0f }); // general midrange presence (default-on demo band)
+                            { 1.0f, -24.0f, 8.0f, 130.0f }); // general midrange presence (default-on demo band)
 
         addBandParameters (layout,
                             { ParamIDs::b4On, nullptr, ParamIDs::b4Freq, ParamIDs::b4Q, ParamIDs::b4Gain,
@@ -263,14 +280,14 @@ namespace lnct
                               ParamIDs::b5Range, ParamIDs::b5Threshold, ParamIDs::b5Attack, ParamIDs::b5Release, ParamIDs::b5Listen,
                               ParamIDs::b5AutoRelease, ParamIDs::b5GainQ, ParamIDs::b5Sat, ParamIDs::b5ScSource, ParamIDs::b5ScMode },
                             "Band 5", 4000.0f, false, {},
-                            { 1.4f, -22.0f, 2.0f, 70.0f }); // sibilance / pick attack / harshness
+                            { 1.4f, -24.0f, 2.0f, 70.0f }); // sibilance / pick attack / harshness
 
         addBandParameters (layout,
                             { ParamIDs::b6On, ParamIDs::b6Type, ParamIDs::b6Freq, ParamIDs::b6Q, ParamIDs::b6Gain,
                               ParamIDs::b6Range, ParamIDs::b6Threshold, ParamIDs::b6Attack, ParamIDs::b6Release, ParamIDs::b6Listen,
                               ParamIDs::b6AutoRelease, ParamIDs::b6GainQ, ParamIDs::b6Sat, ParamIDs::b6ScSource, ParamIDs::b6ScMode },
                             "Band 6", 10000.0f, false, "High Shelf",
-                            { 1.0f, -20.0f, 3.0f, 90.0f }); // air / fizz recovery shelf
+                            { 1.0f, -24.0f, 3.0f, 90.0f }); // air / fizz recovery shelf
 
         //======================================================================
         // Global output trim, applied after Band 6 (and after the Mix
