@@ -78,6 +78,23 @@ juce_add_binary_data(LancetBinaryData SOURCES
     presets/factory/analogWarmthLift.json
     presets/factory/sidechainCarve.json
     resources/i18n/de.txt
+    # Suite typography: EB Garamond, OFL licensed
+    # (resources/fonts/OFL-EBGaramond.txt) - consumed by
+    # src/gui/PlateTypography.h as the single source of every glyph the
+    # wave-3 composited editor letters live over the plate.
+    resources/fonts/EBGaramond-Regular.ttf
+    resources/fonts/EBGaramond-SemiBold.ttf
+    # Wave-3 photoreal "composited plate" GUI (see src/PluginEditor.h): the
+    # approved empty master plate (2k per DECISIONS.md D5), the suite
+    # control sprites (feathered-alpha crops from approved master renders -
+    # provenance in the gui-pipeline scaffold's sprite-library/
+    # provenance.md), and the layout manifest that maps every parameter id
+    # to a sprite type + plate position.
+    resources/gui/plate_lancet.png
+    resources/gui/sprite_knob.png
+    resources/gui/sprite_toggle_up.png
+    resources/gui/sprite_gr_dial.png
+    resources/gui/layout-manifest.json
 )
 
 # ==============================================================================
@@ -162,6 +179,10 @@ target_compile_definitions(Tests PRIVATE
     # tests/fixtures/state-v0.3.0.xml is that a human can read exactly what an
     # old session looked like.
     LANCET_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+    # tests/gui/EditorSnapshotTests.cpp regenerates docs/gui-preview.png
+    # from the real editor draw chain (suite proof-chain rule) - it needs
+    # the repository root to land the file next to the docs it documents.
+    LANCET_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 set_target_properties(Tests PROPERTIES XCODE_GENERATE_SCHEME ON)

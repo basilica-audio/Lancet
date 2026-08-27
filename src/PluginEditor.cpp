@@ -1,241 +1,478 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
-#include "params/ParameterIds.h"
 #include "presets/Localisation.h"
 
 #include <BinaryData.h>
 
+#include <algorithm>
+#include <cmath>
+
 namespace
 {
-    constexpr int knobSize = 62;
-    constexpr int textBoxHeight = 16;
-    constexpr int labelHeight = 16;
-    constexpr int bandLabelHeight = 20;
-    constexpr int toggleRowHeight = 24;
-    constexpr int comboRowHeight = 22;
-    constexpr int margin = 12;
-    constexpr int presetBarHeight = 28;
-    constexpr int numColumns = LancetEngine::numBands;
-    constexpr int rowHeight = labelHeight + knobSize + textBoxHeight;
-    constexpr int numKnobRows = 7; // Freq, Q, Gain, Range, Threshold, Attack, Release
+    // ----- Gilded typography styles (PlateTypography, EB Garamond) --------
+    // Raised warm-gold lettering with a soft drop shadow below - the
+    // tenebrae "gilded lettering on dark ground" convention, correct for
+    // this near-black gloss plate; requiem's dark-ink engraved read is for
+    // bright metal grounds only.
+    constexpr juce::uint32 wordmarkInk = 0xf0d9ae62;
+    constexpr juce::uint32 captionInk = 0xb3c9a05a;
+    constexpr juce::uint32 sectionInk = 0xe6c9a05a;
+    constexpr juce::uint32 controlInk = 0xd8c39a55;
+    constexpr juce::uint32 letterShadow = 0x99000000;
 
-    constexpr int editorWidth = margin * 2 + numColumns * knobSize + (numColumns + 1) * margin;
+    constexpr float controlLabelHeight1x = 10.5f;
 
-    // Three combo rows per band column since v0.4.0: Type (Band 1/6 only,
-    // but the row is reserved for every column so the knob grid stays
-    // aligned), SC Source, SC Mode.
-    constexpr int numComboRows = 3;
+    // Engraved column rules: a dark incision line with a lit gold lip, the
+    // same lighting logic as the lettering.
+    constexpr juce::uint32 ruleInk = 0xcc10100e;
+    constexpr juce::uint32 ruleLip = 0x59c9a05a;
 
-    constexpr int editorHeight = margin + presetBarHeight + margin + rowHeight // preset bar + top strip (In Trim/Out Trim/Mix)
-                                  + margin + bandLabelHeight + toggleRowHeight + numComboRows * comboRowHeight
-                                  + numKnobRows * rowHeight + margin;
-
-    // String IDs for one band's parameters, mirroring
-    // src/PluginProcessor.cpp's own (anonymous-namespace) bandIds table.
-    struct BandIdSet
-    {
-        const char* on;
-        const char* type; // nullptr for bands 2-5
-        const char* freq;
-        const char* q;
-        const char* gain;
-        const char* range;
-        const char* threshold;
-        const char* attack;
-        const char* release;
-        const char* listen;
-        const char* scSource;
-        const char* scMode;
-    };
-
-    constexpr std::array<BandIdSet, LancetEngine::numBands> bandIds { {
-        { ParamIDs::b1On, ParamIDs::b1Type, ParamIDs::b1Freq, ParamIDs::b1Q, ParamIDs::b1Gain,
-          ParamIDs::b1Range, ParamIDs::b1Threshold, ParamIDs::b1Attack, ParamIDs::b1Release, ParamIDs::b1Listen,
-          ParamIDs::b1ScSource, ParamIDs::b1ScMode },
-        { ParamIDs::b2On, nullptr, ParamIDs::b2Freq, ParamIDs::b2Q, ParamIDs::b2Gain,
-          ParamIDs::b2Range, ParamIDs::b2Threshold, ParamIDs::b2Attack, ParamIDs::b2Release, ParamIDs::b2Listen,
-          ParamIDs::b2ScSource, ParamIDs::b2ScMode },
-        { ParamIDs::b3On, nullptr, ParamIDs::b3Freq, ParamIDs::b3Q, ParamIDs::b3Gain,
-          ParamIDs::b3Range, ParamIDs::b3Threshold, ParamIDs::b3Attack, ParamIDs::b3Release, ParamIDs::b3Listen,
-          ParamIDs::b3ScSource, ParamIDs::b3ScMode },
-        { ParamIDs::b4On, nullptr, ParamIDs::b4Freq, ParamIDs::b4Q, ParamIDs::b4Gain,
-          ParamIDs::b4Range, ParamIDs::b4Threshold, ParamIDs::b4Attack, ParamIDs::b4Release, ParamIDs::b4Listen,
-          ParamIDs::b4ScSource, ParamIDs::b4ScMode },
-        { ParamIDs::b5On, nullptr, ParamIDs::b5Freq, ParamIDs::b5Q, ParamIDs::b5Gain,
-          ParamIDs::b5Range, ParamIDs::b5Threshold, ParamIDs::b5Attack, ParamIDs::b5Release, ParamIDs::b5Listen,
-          ParamIDs::b5ScSource, ParamIDs::b5ScMode },
-        { ParamIDs::b6On, ParamIDs::b6Type, ParamIDs::b6Freq, ParamIDs::b6Q, ParamIDs::b6Gain,
-          ParamIDs::b6Range, ParamIDs::b6Threshold, ParamIDs::b6Attack, ParamIDs::b6Release, ParamIDs::b6Listen,
-          ParamIDs::b6ScSource, ParamIDs::b6ScMode },
-    } };
-
-    // M2 i18n frame (.scaffold/specs/preset-system-m2.md): selects German
-    // (resources/i18n/de.txt) or falls through to English, once, at editor
-    // construction - see Localisation.h's docs. `presetBar` is a member
-    // initialised via the constructor's initialiser list, and its own
-    // constructor already calls TRANS() on every button label - member
-    // initialisers run in declaration order regardless of the order
-    // they're written in, so this helper (called from presetBar's own
-    // initialiser expression below) is what actually guarantees
-    // installLocalisation() runs before presetBar exists, not an
-    // installLocalisation() call in the constructor *body*, which would run
-    // too late. See basilica-audio/nave's docs/preset-system-notes.md.
+    // M2 i18n frame: selects German (resources/i18n/de.txt) or falls
+    // through to English, once, at editor construction - see the member
+    // initialiser ordering note in the crypta family editor this pattern
+    // is ported from.
     basilica::presets::PresetManager& initLocalisationThenGetPresetManager (LancetAudioProcessor& processor)
     {
         basilica::presets::installLocalisation (BinaryData::de_txt, BinaryData::de_txtSize);
         return processor.presetManager;
     }
+
 }
 
-LancetAudioProcessorEditor::LancetAudioProcessorEditor (LancetAudioProcessor& processorToEdit)
-    : juce::AudioProcessorEditor (&processorToEdit),
-      audioProcessor (processorToEdit),
-      presetBar (initLocalisationThenGetPresetManager (processorToEdit))
+//==============================================================================
+const juce::Identifier& LancetAudioProcessorEditor::getScaleStatePropertyId() noexcept
 {
-    addAndMakeVisible (presetBar);
+    static const juce::Identifier id ("editorScale");
+    return id;
+}
 
-    configureKnob (inTrimKnob, ParamIDs::inTrim, "In Trim");
-    configureKnob (outTrimKnob, ParamIDs::outTrim, "Out Trim");
-    configureKnob (mixKnob, ParamIDs::mix, "Mix");
+int LancetAudioProcessorEditor::readPersistedScaleStepIndex (const juce::ValueTree& state) noexcept
+{
+    if (! state.hasProperty (getScaleStatePropertyId()))
+        return defaultScaleStepIndex;
 
-    static constexpr const char* bandNames[LancetEngine::numBands] = {
-        "Band 1", "Band 2", "Band 3", "Band 4", "Band 5", "Band 6"
-    };
-    static constexpr const char* shelfLabels[LancetEngine::numBands] = {
-        "Low Shelf", "", "", "", "", "High Shelf"
-    };
+    const auto stored = (double) state.getProperty (getScaleStatePropertyId());
 
-    for (int i = 0; i < LancetEngine::numBands; ++i)
+    if (! std::isfinite (stored) || stored <= 0.0)
+        return defaultScaleStepIndex;
+
+    // Snap to the nearest step - the property may carry any value written
+    // by another family member's editor generation.
+    int best = defaultScaleStepIndex;
+    double bestDistance = std::numeric_limits<double>::max();
+
+    for (size_t i = 0; i < scaleSteps.size(); ++i)
     {
-        configureBandLabel (bandLabels[static_cast<size_t> (i)], bandNames[i]);
-        configureBand (bandControls[static_cast<size_t> (i)], i, shelfLabels[i]);
+        const auto distance = std::abs (stored - (double) scaleSteps[i]);
+
+        if (distance < bestDistance)
+        {
+            bestDistance = distance;
+            best = (int) i;
+        }
     }
 
-    setResizable (false, false);
-    setSize (editorWidth, editorHeight);
+    return best;
+}
+
+//==============================================================================
+LancetAudioProcessorEditor::Manifest LancetAudioProcessorEditor::parseLayoutManifest()
+{
+    Manifest result;
+
+    int jsonSize = 0;
+    const auto* jsonData = BinaryData::getNamedResource ("layoutmanifest_json", jsonSize);
+    jassert (jsonData != nullptr);
+
+    if (jsonData == nullptr)
+        return result;
+
+    const auto parsed = juce::JSON::parse (juce::String::fromUTF8 (jsonData, jsonSize));
+    jassert (parsed.isObject());
+
+    if (! parsed.isObject())
+        return result;
+
+    if (const auto* plate = parsed.getProperty ("plate", {}).getDynamicObject())
+    {
+        result.plateBinary = plate->getProperty ("binary").toString();
+        result.plateWidth1x = (int) plate->getProperty ("width1x");
+        result.plateHeight1x = (int) plate->getProperty ("height1x");
+    }
+
+    if (const auto* sprites = parsed.getProperty ("sprites", {}).getDynamicObject())
+    {
+        for (const auto& [name, value] : sprites->getProperties())
+        {
+            if (const auto* obj = value.getDynamicObject())
+            {
+                SpriteSpec spec;
+                spec.binary = obj->getProperty ("binary").toString();
+                spec.width = (float) obj->getProperty ("width");
+                spec.height = (float) obj->getProperty ("height");
+                spec.knobCx = (float) obj->getProperty ("knobCx");
+                spec.knobCy = (float) obj->getProperty ("knobCy");
+                spec.knobRadius = (float) obj->getProperty ("knobRadius");
+                spec.contentDiameter = (float) obj->getProperty ("contentDiameter");
+                spec.pivotXFrac = (float) obj->getProperty ("pivotXFrac");
+                spec.pivotYFrac = (float) obj->getProperty ("pivotYFrac");
+                spec.needleLengthFrac = (float) obj->getProperty ("needleLengthFrac");
+                result.sprites[name.toString()] = spec;
+            }
+        }
+    }
+
+    const auto parseTicks = [&parsed] (const char* key, std::vector<basilica::gui::NeedleDial::Tick>& out)
+    {
+        if (const auto* ticks = parsed.getProperty (key, {}).getArray())
+            for (const auto& pair : *ticks)
+                if (const auto* entry = pair.getArray(); entry != nullptr && entry->size() == 2)
+                    out.push_back ({ (float) (*entry)[0], (float) (*entry)[1] });
+    };
+
+    parseTicks ("vuTicks", result.vuTicks);
+    parseTicks ("grTicks", result.grTicks);
+
+    if (const auto* controls = parsed.getProperty ("controls", {}).getArray())
+    {
+        for (const auto& value : *controls)
+        {
+            if (const auto* obj = value.getDynamicObject())
+            {
+                ControlSpec spec;
+                spec.id = obj->getProperty ("id").toString();
+                spec.type = obj->getProperty ("type").toString();
+                spec.label = obj->getProperty ("label").toString();
+                spec.tap = obj->getProperty ("tap").toString();
+                spec.cx = (float) obj->getProperty ("cx");
+                spec.cy = (float) obj->getProperty ("cy");
+                spec.size = (float) obj->getProperty ("size");
+                spec.sweep = obj->hasProperty ("sweep") ? (float) obj->getProperty ("sweep") : 270.0f;
+                spec.leverUpWhenOn = obj->hasProperty ("leverUpWhenOn") ? (bool) obj->getProperty ("leverUpWhenOn") : true;
+                result.controls.push_back (std::move (spec));
+            }
+        }
+    }
+
+    if (const auto* labels = parsed.getProperty ("labels", {}).getArray())
+    {
+        for (const auto& value : *labels)
+        {
+            if (const auto* obj = value.getDynamicObject())
+            {
+                LabelSpec spec;
+                spec.text = obj->getProperty ("text").toString();
+                spec.style = obj->getProperty ("style").toString();
+                spec.cx = (float) obj->getProperty ("cx");
+                spec.cy = (float) obj->getProperty ("cy");
+                spec.h = (float) obj->getProperty ("h");
+                result.labels.push_back (std::move (spec));
+            }
+        }
+    }
+
+    if (const auto* rules = parsed.getProperty ("rules", {}).getArray())
+        for (const auto& value : *rules)
+            if (const auto* obj = value.getDynamicObject())
+                result.rules.push_back ({ (float) obj->getProperty ("x1"), (float) obj->getProperty ("y1"),
+                                          (float) obj->getProperty ("x2"), (float) obj->getProperty ("y2") });
+
+    return result;
+}
+
+juce::Image LancetAudioProcessorEditor::imageForBinary (const juce::String& binaryName) const
+{
+    int dataSize = 0;
+    const auto* data = BinaryData::getNamedResource (binaryName.toRawUTF8(), dataSize);
+    jassert (data != nullptr);
+
+    if (data == nullptr)
+        return {};
+
+    return juce::ImageCache::getFromMemory (data, dataSize);
+}
+
+//==============================================================================
+LancetAudioProcessorEditor::LancetAudioProcessorEditor (LancetAudioProcessor& processorToEdit)
+    : juce::AudioProcessorEditor (processorToEdit),
+      audioProcessor (processorToEdit),
+      manifest (parseLayoutManifest()),
+      plateImage (imageForBinary (manifest.plateBinary)),
+      typography (BinaryData::EBGaramondRegular_ttf, BinaryData::EBGaramondRegular_ttfSize,
+                  BinaryData::EBGaramondSemiBold_ttf, BinaryData::EBGaramondSemiBold_ttfSize),
+      presetBar (initLocalisationThenGetPresetManager (processorToEdit))
+{
+    jassert (plateImage.isValid());
+    jassert (manifest.plateWidth1x > 0 && manifest.plateHeight1x > 0);
+
+    designWidth = manifest.plateWidth1x;
+    designHeight = topStripHeight1x + manifest.plateHeight1x;
+
+    // FOCUS ORDER: preset bar and scale button first, then every control
+    // in manifest (signal-flow/reading) order.
+    addAndMakeVisible (presetBar);
+
+    scaleButton.setComponentID ("scaleButton");
+    scaleButton.onClick = [this] { cycleScale(); };
+    addAndMakeVisible (scaleButton);
+
+    buildControlsFromManifest();
+
+    applyScaleStep (readPersistedScaleStepIndex (audioProcessor.apvts.state));
+
+    startTimerHz (meterRefreshHz);
 }
 
 LancetAudioProcessorEditor::~LancetAudioProcessorEditor() = default;
 
-void LancetAudioProcessorEditor::configureKnob (Knob& knob, const juce::String& parameterId, const juce::String& labelText)
+void LancetAudioProcessorEditor::buildControlsFromManifest()
 {
-    knob.slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    knob.slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, knobSize, textBoxHeight);
-    addAndMakeVisible (knob.slider);
+    auto& apvts = audioProcessor.apvts;
 
-    knob.label.setText (labelText, juce::dontSendNotification);
-    knob.label.setJustificationType (juce::Justification::centred);
-    knob.label.setFont (juce::Font (juce::FontOptions (11.0f)));
-    // false => label sits above the slider it tracks; JUCE repositions it
-    // automatically whenever the slider's bounds change, so resized() only
-    // needs to place the sliders themselves.
-    knob.label.attachToComponent (&knob.slider, false);
-    addAndMakeVisible (knob.label);
+    // Sprite images decode once and are shared by every control that uses
+    // the same sheet (juce::Image is COW-shared internally).
+    std::map<juce::String, juce::Image> spriteImages;
 
-    knob.attachment = std::make_unique<SliderAttachment> (audioProcessor.apvts, parameterId, knob.slider);
-}
+    for (const auto& [name, spec] : manifest.sprites)
+        spriteImages[name] = imageForBinary (spec.binary);
 
-void LancetAudioProcessorEditor::configureToggle (Toggle& toggle, const juce::String& parameterId, const juce::String& labelText)
-{
-    toggle.button.setButtonText (labelText);
-    addAndMakeVisible (toggle.button);
-
-    toggle.attachment = std::make_unique<ButtonAttachment> (audioProcessor.apvts, parameterId, toggle.button);
-}
-
-void LancetAudioProcessorEditor::configureBandLabel (juce::Label& label, const juce::String& text)
-{
-    label.setText (text, juce::dontSendNotification);
-    label.setJustificationType (juce::Justification::centred);
-    label.setFont (juce::Font (juce::FontOptions (14.0f, juce::Font::bold)));
-    addAndMakeVisible (label);
-}
-
-void LancetAudioProcessorEditor::configureBand (BandControls& band, int bandIndex, const juce::String& shelfLabel)
-{
-    const auto& ids = bandIds[static_cast<size_t> (bandIndex)];
-
-    configureToggle (band.on, ids.on, "On");
-    configureToggle (band.listen, ids.listen, "Listen");
-
-    band.hasType = ids.type != nullptr;
-
-    if (band.hasType)
+    const auto meterTitleForTap = [] (const juce::String& tap) -> juce::String
     {
-        band.typeBox.addItem ("Bell", 1);
-        band.typeBox.addItem (shelfLabel, 2);
-        addAndMakeVisible (band.typeBox);
-        band.typeAttachment = std::make_unique<ComboBoxAttachment> (audioProcessor.apvts, ids.type, band.typeBox);
-    }
-    else
+        // Taps are "b1Gr".."b6Gr", one per band column.
+        jassert (tap.length() == 4 && tap.startsWith ("b") && tap.endsWith ("Gr"));
+        return "Band " + tap.substring (1, 2) + " gain reduction meter";
+    };
+
+    for (const auto& spec : manifest.controls)
     {
-        band.typeBox.setVisible (false);
+        if (spec.type == "knob" || spec.type == "selector")
+        {
+            const auto& sprite = manifest.sprites.at (spec.type == "knob" ? "knob" : "selector");
+            const auto halfSweep = spec.sweep * 0.5f;
+
+            KnobControl control;
+            control.spec = spec;
+            control.slider = std::make_unique<basilica::gui::SpriteKnob> (
+                spriteImages.at (spec.type == "knob" ? "knob" : "selector"),
+                juce::Point<float> (sprite.knobCx, sprite.knobCy), sprite.knobRadius,
+                -halfSweep, halfSweep);
+
+            control.slider->setTitle (spec.label);
+            control.slider->setName (spec.id);
+
+            if (auto* parameter = apvts.getParameter (spec.id))
+                control.slider->textFromValueFunction = [parameter] (double value)
+                {
+                    return parameter->getText (parameter->convertTo0to1 ((float) value), 0);
+                };
+
+            addAndMakeVisible (*control.slider);
+            control.attachment = std::make_unique<SliderAttachment> (apvts, spec.id, *control.slider);
+            knobs.push_back (std::move (control));
+        }
+        else if (spec.type == "toggle")
+        {
+            ToggleControl control;
+            control.spec = spec;
+            control.button = std::make_unique<basilica::gui::SpriteToggle> (spriteImages.at ("toggle"),
+                                                                             spec.leverUpWhenOn);
+            control.button->setTitle (spec.label);
+            control.button->setName (spec.id);
+
+            addAndMakeVisible (*control.button);
+            control.attachment = std::make_unique<ButtonAttachment> (apvts, spec.id, *control.button);
+            toggles.push_back (std::move (control));
+        }
+        else if (spec.type == "gr")
+        {
+            const auto& sprite = manifest.sprites.at ("gr");
+
+            MeterControl control;
+            control.spec = spec;
+            control.dial = std::make_unique<basilica::gui::NeedleDial> (
+                spriteImages.at ("gr"), meterTitleForTap (spec.tap),
+                sprite.pivotXFrac, sprite.pivotYFrac, sprite.needleLengthFrac, manifest.grTicks);
+
+            addAndMakeVisible (*control.dial);
+            meters.push_back (std::move (control));
+        }
+        else
+        {
+            jassertfalse; // unknown control type in the manifest
+        }
     }
 
-    // ComboBoxAttachment binds a selection to a parameter index but never
-    // fills the box, so the items are added here first, in the same order
-    // as the AudioParameterChoice's own StringArray (see
-    // params/ParameterLayout.cpp) - index 0 is the pre-v0.4.0 behaviour in
-    // both cases.
-    band.scSourceBox.addItem ("Int SC", 1);
-    band.scSourceBox.addItem ("Ext SC", 2);
-    addAndMakeVisible (band.scSourceBox);
-    band.scSourceAttachment = std::make_unique<ComboBoxAttachment> (audioProcessor.apvts, ids.scSource, band.scSourceBox);
-
-    band.scModeBox.addItem ("Split", 1);
-    band.scModeBox.addItem ("Wide", 2);
-    addAndMakeVisible (band.scModeBox);
-    band.scModeAttachment = std::make_unique<ComboBoxAttachment> (audioProcessor.apvts, ids.scMode, band.scModeBox);
-
-    configureKnob (band.freq, ids.freq, "Freq");
-    configureKnob (band.q, ids.q, "Q");
-    configureKnob (band.gain, ids.gain, "Gain");
-    configureKnob (band.range, ids.range, "Range");
-    configureKnob (band.threshold, ids.threshold, "Thresh");
-    configureKnob (band.attack, ids.attack, "Attack");
-    configureKnob (band.release, ids.release, "Release");
+    // Seed each needle's initial pose from the live telemetry so the
+    // editor opens with honest readings instead of a ramp from the floor.
+    updateMetersFromProcessor (1.0e6f);
 }
 
+//==============================================================================
+void LancetAudioProcessorEditor::applyScaleStep (int newStepIndex)
+{
+    scaleStepIndex = juce::jlimit (0, (int) scaleSteps.size() - 1, newStepIndex);
+
+    const auto percentText = juce::String ((int) std::lround (scaleSteps[(size_t) scaleStepIndex] * 100.0f)) + "%";
+    scaleButton.setButtonText (percentText);
+    scaleButton.setTitle ("Window scale, " + percentText);
+
+    audioProcessor.apvts.state.setProperty (getScaleStatePropertyId(),
+                                            (double) scaleSteps[(size_t) scaleStepIndex], nullptr);
+
+    const auto scale = scaleSteps[(size_t) scaleStepIndex];
+    setSize ((int) std::lround ((float) designWidth * scale),
+             (int) std::lround ((float) designHeight * scale));
+}
+
+void LancetAudioProcessorEditor::cycleScale()
+{
+    applyScaleStep ((scaleStepIndex + 1) % (int) scaleSteps.size());
+}
+
+//==============================================================================
 void LancetAudioProcessorEditor::resized()
 {
-    auto bounds = getLocalBounds().reduced (margin);
+    const auto scale = getEditorScale();
+    const auto s = [scale] (float value1x) { return (int) std::lround (value1x * scale); };
 
-    presetBar.setBounds (bounds.removeFromTop (presetBarHeight));
-    bounds.removeFromTop (margin);
+    auto topStrip = getLocalBounds().removeFromTop (s ((float) topStripHeight1x));
+    scaleButton.setBounds (topStrip.removeFromRight (s (64.0f)).reduced (0, s (4.0f)));
+    presetBar.setBounds (topStrip.reduced (0, s (2.0f)));
 
-    // Top strip: In Trim, Out Trim, Mix - three knobs, left-aligned, not
-    // stretched across the full band-column grid width below.
-    auto topRow = bounds.removeFromTop (rowHeight);
-    const auto topSlotWidth = knobSize + margin;
+    const auto plateOriginY = (float) s ((float) topStripHeight1x);
 
-    inTrimKnob.slider.setBounds (topRow.removeFromLeft (topSlotWidth).reduced (margin / 2, 0));
-    outTrimKnob.slider.setBounds (topRow.removeFromLeft (topSlotWidth).reduced (margin / 2, 0));
-    mixKnob.slider.setBounds (topRow.removeFromLeft (topSlotWidth).reduced (margin / 2, 0));
-
-    bounds.removeFromTop (margin);
-
-    const auto columnWidth = bounds.getWidth() / numColumns;
-
-    for (int i = 0; i < LancetEngine::numBands; ++i)
+    const auto place = [&] (const ControlSpec& spec, float frameW, float frameH,
+                            float anchorX, float anchorY, float drawScale1x)
     {
-        auto column = bounds.removeFromLeft (columnWidth);
-        auto& band = bandControls[static_cast<size_t> (i)];
+        // drawScale1x: sprite px -> design px. anchorX/anchorY: the point
+        // within the sprite frame that must land on (cx, cy).
+        const auto totalScale = drawScale1x * scale;
+        const auto x = spec.cx * scale - anchorX * totalScale;
+        const auto y = spec.cy * scale + plateOriginY - anchorY * totalScale;
 
-        bandLabels[static_cast<size_t> (i)].setBounds (column.removeFromTop (bandLabelHeight));
+        return juce::Rectangle<int> ((int) std::lround (x), (int) std::lround (y),
+                                     (int) std::lround (frameW * totalScale),
+                                     (int) std::lround (frameH * totalScale));
+    };
 
-        auto toggleRow = column.removeFromTop (toggleRowHeight);
-        const auto half = toggleRow.getWidth() / 2;
-        band.on.button.setBounds (toggleRow.removeFromLeft (half).reduced (margin / 4, 2));
-        band.listen.button.setBounds (toggleRow.reduced (margin / 4, 2));
-
-        auto typeRow = column.removeFromTop (comboRowHeight);
-        if (band.hasType)
-            band.typeBox.setBounds (typeRow.reduced (margin / 4, 2));
-
-        band.scSourceBox.setBounds (column.removeFromTop (comboRowHeight).reduced (margin / 4, 2));
-        band.scModeBox.setBounds (column.removeFromTop (comboRowHeight).reduced (margin / 4, 2));
-
-        for (auto* knob : { &band.freq, &band.q, &band.gain, &band.range, &band.threshold, &band.attack, &band.release })
-            knob->slider.setBounds (column.removeFromTop (rowHeight).reduced (margin / 2, 0));
+    for (auto& control : knobs)
+    {
+        const auto& sprite = manifest.sprites.at (control.spec.type == "knob" ? "knob" : "selector");
+        const auto drawScale = control.spec.size / (2.0f * sprite.knobRadius);
+        control.slider->setBounds (place (control.spec, sprite.width, sprite.height,
+                                          sprite.knobCx, sprite.knobCy, drawScale));
     }
+
+    for (auto& control : toggles)
+    {
+        const auto& sprite = manifest.sprites.at ("toggle");
+        const auto drawScale = control.spec.size / sprite.height;
+        control.button->setBounds (place (control.spec, sprite.width, sprite.height,
+                                          sprite.width * 0.5f, sprite.height * 0.5f, drawScale));
+    }
+
+    for (auto& control : meters)
+    {
+        const auto& sprite = manifest.sprites.at (control.spec.type);
+        const auto drawScale = control.spec.size / sprite.contentDiameter;
+        control.dial->setBounds (place (control.spec, sprite.width, sprite.height,
+                                        sprite.width * 0.5f, sprite.height * 0.5f, drawScale));
+    }
+}
+
+//==============================================================================
+void LancetAudioProcessorEditor::paint (juce::Graphics& g)
+{
+    g.fillAll (juce::Colour (0xff0b0a09));
+
+    const auto scale = getEditorScale();
+    const auto plateOriginY = std::lround ((float) topStripHeight1x * scale);
+
+    g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+    g.drawImage (plateImage,
+                 juce::Rectangle<float> (0.0f, (float) plateOriginY,
+                                         (float) manifest.plateWidth1x * scale,
+                                         (float) manifest.plateHeight1x * scale));
+
+    drawPlateTypography (g, scale, (float) plateOriginY);
+}
+
+void LancetAudioProcessorEditor::drawPlateTypography (juce::Graphics& g, float scale, float plateOriginY) const
+{
+    using basilica::gui::EngravedTextStyle;
+
+    const auto boxAt = [&] (float cx, float cy, float w1x, float h1x)
+    {
+        return juce::Rectangle<float> (cx * scale - w1x * scale * 0.5f,
+                                       cy * scale + plateOriginY - h1x * scale * 0.5f,
+                                       w1x * scale, h1x * scale);
+    };
+
+    for (const auto& label : manifest.labels)
+    {
+        EngravedTextStyle style { juce::Colour (sectionInk), juce::Colour (letterShadow), label.h, 0.24f, true };
+
+        if (label.style == "wordmark")
+            style = { juce::Colour (wordmarkInk), juce::Colour (letterShadow), label.h, 0.32f, true };
+        else if (label.style == "caption")
+            style = { juce::Colour (captionInk), juce::Colour (letterShadow), label.h, 0.46f, false };
+
+        typography.drawEngraved (g, label.text, boxAt (label.cx, label.cy, 420.0f, label.h + 8.0f), scale, style);
+    }
+
+    const EngravedTextStyle controlStyle { juce::Colour (controlInk), juce::Colour (letterShadow),
+                                           controlLabelHeight1x, 0.16f, false };
+
+    for (const auto& control : manifest.controls)
+    {
+        if (control.label.isEmpty())
+            continue;
+
+        const auto labelGap1x = (control.type == "vu" || control.type == "gr") ? 16.0f : 13.0f;
+        const auto labelCy = control.cy + control.size * 0.5f + labelGap1x;
+        typography.drawEngraved (g, control.label, boxAt (control.cx, labelCy, 110.0f, 14.0f), scale, controlStyle);
+    }
+
+    // Engraved column rules: incision line + lit lip (the plate's own
+    // pinstripe language - separators only, never decoration without
+    // grouping meaning).
+    for (const auto& rule : manifest.rules)
+    {
+        const auto x1 = rule.x1 * scale;
+        const auto y1 = rule.y1 * scale + plateOriginY;
+        const auto x2 = rule.x2 * scale;
+        const auto y2 = rule.y2 * scale + plateOriginY;
+        const auto lip = juce::jmax (1.0f, scale);
+
+        g.setColour (juce::Colour (ruleLip));
+
+        if (std::abs (x2 - x1) < std::abs (y2 - y1))
+            g.drawLine (x1 + lip, y1, x2 + lip, y2, juce::jmax (1.0f, scale * 0.8f));
+        else
+            g.drawLine (x1, y1 + lip, x2, y2 + lip, juce::jmax (1.0f, scale * 0.8f));
+
+        g.setColour (juce::Colour (ruleInk));
+        g.drawLine (x1, y1, x2, y2, juce::jmax (1.0f, scale * 0.8f));
+    }
+}
+
+//==============================================================================
+void LancetAudioProcessorEditor::updateMetersFromProcessor (float dtSeconds)
+{
+    for (auto& meter : meters)
+    {
+        // Taps are "b1Gr".."b6Gr"; band indices are 0-based. Positive
+        // (boost) values clamp to 0 - the dial shows reduction only, per
+        // the suite GR numeral convention.
+        const auto bandIndex = meter.spec.tap.substring (1, 2).getIntValue() - 1;
+        const auto db = juce::jmin (0.0f, audioProcessor.getBandGainReductionDb (bandIndex));
+
+        meter.dial->setTargetDb (db);
+        meter.dial->tick (dtSeconds);
+    }
+}
+
+void LancetAudioProcessorEditor::timerCallback()
+{
+    updateMetersFromProcessor (1.0f / (float) meterRefreshHz);
 }
