@@ -424,6 +424,7 @@ Stated plainly, because knowing them is more useful than not:
   range changes host automation-curve mapping), lookahead, per-band ratio,
   linear phase, more than six bands, and a spectrum-analyzer/EQ-curve
   display.
-- **Lancet is pre-1.0 and its binaries are currently unsigned.** Breaking
-  changes are possible until v1.0.0; signing, notarization and installers
+- **Lancet is pre-1.0.** Release binaries for macOS are
+  Developer-ID-signed, notarised and stapled; Windows binaries are not yet
+  Authenticode-signed. Breaking changes are possible until v1.0.0; installers
   are a later milestone. See `README.md`.
