@@ -1,0 +1,869 @@
+{
+ "family": "basilica-wave3-composited-plate",
+ "plate": {
+  "binary": "plate_lancet_png",
+  "width1x": 1264,
+  "height1x": 848
+ },
+ "sprites": {
+  "knob": {
+   "binary": "sprite_knob_png",
+   "width": 160,
+   "height": 160,
+   "knobCx": 80,
+   "knobCy": 80,
+   "knobRadius": 63
+  },
+  "toggle": {
+   "binary": "sprite_toggle_up_png",
+   "width": 117,
+   "height": 129
+  },
+  "gr": {
+   "binary": "sprite_gr_dial_png",
+   "width": 332,
+   "height": 332,
+   "contentDiameter": 300,
+   "pivotXFrac": 0.5,
+   "pivotYFrac": 0.64,
+   "needleLengthFrac": 0.3
+  }
+ },
+ "grTicks": [
+  [
+   -20,
+   -48.0
+  ],
+  [
+   -10,
+   -26.0
+  ],
+  [
+   -6,
+   -8.0
+  ],
+  [
+   -3,
+   14.0
+  ],
+  [
+   0,
+   46.0
+  ]
+ ],
+ "controls": [
+  {
+   "id": "in_trim",
+   "type": "knob",
+   "label": "IN TRIM",
+   "cx": 196,
+   "cy": 260,
+   "size": 52,
+   "sweep": 270
+  },
+  {
+   "id": "meter_b1Gr",
+   "type": "gr",
+   "tap": "b1Gr",
+   "label": "",
+   "cx": 357,
+   "cy": 252,
+   "size": 52
+  },
+  {
+   "id": "b1_freq",
+   "type": "knob",
+   "label": "FREQ",
+   "cx": 357,
+   "cy": 308,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b1_q",
+   "type": "knob",
+   "label": "Q",
+   "cx": 357,
+   "cy": 360,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b1_gain",
+   "type": "knob",
+   "label": "GAIN",
+   "cx": 357,
+   "cy": 412,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b1_range",
+   "type": "knob",
+   "label": "RANGE",
+   "cx": 357,
+   "cy": 486,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b1_thresh",
+   "type": "knob",
+   "label": "THRESH",
+   "cx": 357,
+   "cy": 538,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b1_attack",
+   "type": "knob",
+   "label": "ATTACK",
+   "cx": 357,
+   "cy": 590,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b1_release",
+   "type": "knob",
+   "label": "RELEASE",
+   "cx": 357,
+   "cy": 642,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b1_on",
+   "type": "toggle",
+   "label": "ON",
+   "cx": 321,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b1_listen",
+   "type": "toggle",
+   "label": "LISTEN",
+   "cx": 357,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b1_sat",
+   "type": "toggle",
+   "label": "SAT",
+   "cx": 393,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b1_autoRelease",
+   "type": "toggle",
+   "label": "A.REL",
+   "cx": 321,
+   "cy": 740,
+   "size": 20
+  },
+  {
+   "id": "b1_gainQ",
+   "type": "toggle",
+   "label": "G-Q",
+   "cx": 357,
+   "cy": 740,
+   "size": 20
+  },
+  {
+   "id": "b1_type",
+   "type": "toggle",
+   "label": "TYPE",
+   "cx": 393,
+   "cy": 740,
+   "size": 20,
+   "leverUpWhenOn": false
+  },
+  {
+   "id": "meter_b2Gr",
+   "type": "gr",
+   "tap": "b2Gr",
+   "label": "",
+   "cx": 467,
+   "cy": 252,
+   "size": 52
+  },
+  {
+   "id": "b2_freq",
+   "type": "knob",
+   "label": "FREQ",
+   "cx": 467,
+   "cy": 308,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b2_q",
+   "type": "knob",
+   "label": "Q",
+   "cx": 467,
+   "cy": 360,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b2_gain",
+   "type": "knob",
+   "label": "GAIN",
+   "cx": 467,
+   "cy": 412,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b2_range",
+   "type": "knob",
+   "label": "RANGE",
+   "cx": 467,
+   "cy": 486,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b2_thresh",
+   "type": "knob",
+   "label": "THRESH",
+   "cx": 467,
+   "cy": 538,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b2_attack",
+   "type": "knob",
+   "label": "ATTACK",
+   "cx": 467,
+   "cy": 590,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b2_release",
+   "type": "knob",
+   "label": "RELEASE",
+   "cx": 467,
+   "cy": 642,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b2_on",
+   "type": "toggle",
+   "label": "ON",
+   "cx": 431,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b2_listen",
+   "type": "toggle",
+   "label": "LISTEN",
+   "cx": 467,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b2_sat",
+   "type": "toggle",
+   "label": "SAT",
+   "cx": 503,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b2_autoRelease",
+   "type": "toggle",
+   "label": "A.REL",
+   "cx": 431,
+   "cy": 740,
+   "size": 20
+  },
+  {
+   "id": "b2_gainQ",
+   "type": "toggle",
+   "label": "G-Q",
+   "cx": 467,
+   "cy": 740,
+   "size": 20
+  },
+  {
+   "id": "meter_b3Gr",
+   "type": "gr",
+   "tap": "b3Gr",
+   "label": "",
+   "cx": 577,
+   "cy": 252,
+   "size": 52
+  },
+  {
+   "id": "b3_freq",
+   "type": "knob",
+   "label": "FREQ",
+   "cx": 577,
+   "cy": 308,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b3_q",
+   "type": "knob",
+   "label": "Q",
+   "cx": 577,
+   "cy": 360,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b3_gain",
+   "type": "knob",
+   "label": "GAIN",
+   "cx": 577,
+   "cy": 412,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b3_range",
+   "type": "knob",
+   "label": "RANGE",
+   "cx": 577,
+   "cy": 486,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b3_thresh",
+   "type": "knob",
+   "label": "THRESH",
+   "cx": 577,
+   "cy": 538,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b3_attack",
+   "type": "knob",
+   "label": "ATTACK",
+   "cx": 577,
+   "cy": 590,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b3_release",
+   "type": "knob",
+   "label": "RELEASE",
+   "cx": 577,
+   "cy": 642,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b3_on",
+   "type": "toggle",
+   "label": "ON",
+   "cx": 541,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b3_listen",
+   "type": "toggle",
+   "label": "LISTEN",
+   "cx": 577,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b3_sat",
+   "type": "toggle",
+   "label": "SAT",
+   "cx": 613,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b3_autoRelease",
+   "type": "toggle",
+   "label": "A.REL",
+   "cx": 541,
+   "cy": 740,
+   "size": 20
+  },
+  {
+   "id": "b3_gainQ",
+   "type": "toggle",
+   "label": "G-Q",
+   "cx": 577,
+   "cy": 740,
+   "size": 20
+  },
+  {
+   "id": "meter_b4Gr",
+   "type": "gr",
+   "tap": "b4Gr",
+   "label": "",
+   "cx": 687,
+   "cy": 252,
+   "size": 52
+  },
+  {
+   "id": "b4_freq",
+   "type": "knob",
+   "label": "FREQ",
+   "cx": 687,
+   "cy": 308,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b4_q",
+   "type": "knob",
+   "label": "Q",
+   "cx": 687,
+   "cy": 360,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b4_gain",
+   "type": "knob",
+   "label": "GAIN",
+   "cx": 687,
+   "cy": 412,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b4_range",
+   "type": "knob",
+   "label": "RANGE",
+   "cx": 687,
+   "cy": 486,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b4_thresh",
+   "type": "knob",
+   "label": "THRESH",
+   "cx": 687,
+   "cy": 538,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b4_attack",
+   "type": "knob",
+   "label": "ATTACK",
+   "cx": 687,
+   "cy": 590,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b4_release",
+   "type": "knob",
+   "label": "RELEASE",
+   "cx": 687,
+   "cy": 642,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b4_on",
+   "type": "toggle",
+   "label": "ON",
+   "cx": 651,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b4_listen",
+   "type": "toggle",
+   "label": "LISTEN",
+   "cx": 687,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b4_sat",
+   "type": "toggle",
+   "label": "SAT",
+   "cx": 723,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b4_autoRelease",
+   "type": "toggle",
+   "label": "A.REL",
+   "cx": 651,
+   "cy": 740,
+   "size": 20
+  },
+  {
+   "id": "b4_gainQ",
+   "type": "toggle",
+   "label": "G-Q",
+   "cx": 687,
+   "cy": 740,
+   "size": 20
+  },
+  {
+   "id": "meter_b5Gr",
+   "type": "gr",
+   "tap": "b5Gr",
+   "label": "",
+   "cx": 797,
+   "cy": 252,
+   "size": 52
+  },
+  {
+   "id": "b5_freq",
+   "type": "knob",
+   "label": "FREQ",
+   "cx": 797,
+   "cy": 308,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b5_q",
+   "type": "knob",
+   "label": "Q",
+   "cx": 797,
+   "cy": 360,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b5_gain",
+   "type": "knob",
+   "label": "GAIN",
+   "cx": 797,
+   "cy": 412,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b5_range",
+   "type": "knob",
+   "label": "RANGE",
+   "cx": 797,
+   "cy": 486,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b5_thresh",
+   "type": "knob",
+   "label": "THRESH",
+   "cx": 797,
+   "cy": 538,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b5_attack",
+   "type": "knob",
+   "label": "ATTACK",
+   "cx": 797,
+   "cy": 590,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b5_release",
+   "type": "knob",
+   "label": "RELEASE",
+   "cx": 797,
+   "cy": 642,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b5_on",
+   "type": "toggle",
+   "label": "ON",
+   "cx": 761,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b5_listen",
+   "type": "toggle",
+   "label": "LISTEN",
+   "cx": 797,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b5_sat",
+   "type": "toggle",
+   "label": "SAT",
+   "cx": 833,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b5_autoRelease",
+   "type": "toggle",
+   "label": "A.REL",
+   "cx": 761,
+   "cy": 740,
+   "size": 20
+  },
+  {
+   "id": "b5_gainQ",
+   "type": "toggle",
+   "label": "G-Q",
+   "cx": 797,
+   "cy": 740,
+   "size": 20
+  },
+  {
+   "id": "meter_b6Gr",
+   "type": "gr",
+   "tap": "b6Gr",
+   "label": "",
+   "cx": 907,
+   "cy": 252,
+   "size": 52
+  },
+  {
+   "id": "b6_freq",
+   "type": "knob",
+   "label": "FREQ",
+   "cx": 907,
+   "cy": 308,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b6_q",
+   "type": "knob",
+   "label": "Q",
+   "cx": 907,
+   "cy": 360,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b6_gain",
+   "type": "knob",
+   "label": "GAIN",
+   "cx": 907,
+   "cy": 412,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b6_range",
+   "type": "knob",
+   "label": "RANGE",
+   "cx": 907,
+   "cy": 486,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b6_thresh",
+   "type": "knob",
+   "label": "THRESH",
+   "cx": 907,
+   "cy": 538,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b6_attack",
+   "type": "knob",
+   "label": "ATTACK",
+   "cx": 907,
+   "cy": 590,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b6_release",
+   "type": "knob",
+   "label": "RELEASE",
+   "cx": 907,
+   "cy": 642,
+   "size": 36,
+   "sweep": 270
+  },
+  {
+   "id": "b6_on",
+   "type": "toggle",
+   "label": "ON",
+   "cx": 871,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b6_listen",
+   "type": "toggle",
+   "label": "LISTEN",
+   "cx": 907,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b6_sat",
+   "type": "toggle",
+   "label": "SAT",
+   "cx": 943,
+   "cy": 700,
+   "size": 20
+  },
+  {
+   "id": "b6_autoRelease",
+   "type": "toggle",
+   "label": "A.REL",
+   "cx": 871,
+   "cy": 740,
+   "size": 20
+  },
+  {
+   "id": "b6_gainQ",
+   "type": "toggle",
+   "label": "G-Q",
+   "cx": 907,
+   "cy": 740,
+   "size": 20
+  },
+  {
+   "id": "b6_type",
+   "type": "toggle",
+   "label": "TYPE",
+   "cx": 943,
+   "cy": 740,
+   "size": 20,
+   "leverUpWhenOn": false
+  },
+  {
+   "id": "out_trim",
+   "type": "knob",
+   "label": "OUT TRIM",
+   "cx": 1068,
+   "cy": 260,
+   "size": 52,
+   "sweep": 270
+  },
+  {
+   "id": "mix",
+   "type": "knob",
+   "label": "MIX",
+   "cx": 632,
+   "cy": 166,
+   "size": 52,
+   "sweep": 270
+  }
+ ],
+ "labels": [
+  {
+   "text": "LANCET",
+   "cx": 632,
+   "cy": 104,
+   "h": 32,
+   "style": "wordmark"
+  },
+  {
+   "text": "BASILICA AUDIO",
+   "cx": 632,
+   "cy": 130,
+   "h": 11,
+   "style": "caption"
+  },
+  {
+   "text": "BAND 1",
+   "cx": 357,
+   "cy": 214,
+   "h": 12,
+   "style": "section"
+  },
+  {
+   "text": "BAND 2",
+   "cx": 467,
+   "cy": 214,
+   "h": 12,
+   "style": "section"
+  },
+  {
+   "text": "BAND 3",
+   "cx": 577,
+   "cy": 214,
+   "h": 12,
+   "style": "section"
+  },
+  {
+   "text": "BAND 4",
+   "cx": 687,
+   "cy": 214,
+   "h": 12,
+   "style": "section"
+  },
+  {
+   "text": "BAND 5",
+   "cx": 797,
+   "cy": 214,
+   "h": 12,
+   "style": "section"
+  },
+  {
+   "text": "BAND 6",
+   "cx": 907,
+   "cy": 214,
+   "h": 12,
+   "style": "section"
+  }
+ ],
+ "rules": [
+  {
+   "x1": 412,
+   "y1": 232,
+   "x2": 412,
+   "y2": 755
+  },
+  {
+   "x1": 522,
+   "y1": 232,
+   "x2": 522,
+   "y2": 755
+  },
+  {
+   "x1": 742,
+   "y1": 232,
+   "x2": 742,
+   "y2": 755
+  },
+  {
+   "x1": 852,
+   "y1": 232,
+   "x2": 852,
+   "y2": 755
+  },
+  {
+   "x1": 632,
+   "y1": 232,
+   "x2": 632,
+   "y2": 438
+  },
+  {
+   "x1": 632,
+   "y1": 470,
+   "x2": 632,
+   "y2": 755
+  }
+ ]
+}

@@ -2,108 +2,197 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
-#include "dsp/LancetEngine.h"
-#include "presets/PresetBar.h"
-
 #include <array>
+#include <map>
 #include <memory>
+#include <vector>
+
+#include "gui/NeedleDial.h"
+#include "gui/PlateTypography.h"
+#include "gui/SpriteKnob.h"
+#include "gui/SpriteToggle.h"
+#include "presets/PresetBar.h"
 
 class LancetAudioProcessor;
 
-// A simple, functional v0.1/v0.2 editor: a preset bar (M2, docs/design-
-// brief.md's preset system) docked at the top, above a strip of Input Trim/
-// Output Trim/Mix knobs and six per-band columns (Band 1 - Band 6,
-// signal-flow order), each holding an On/Listen toggle row, a Type combo
-// (Bell/Shelf - Band 1 and Band 6 only, per docs/design-brief.md), and
-// Freq/Q/Gain/Range/Threshold/Attack/Release knobs bound via
-// SliderAttachment/ButtonAttachment/ComboBoxAttachment. The two new v0.2.0
-// per-band booleans (`bN_autoRelease`/`bN_gainQ`) and v0.3.0's `bN_sat`
-// have no dedicated control yet - deliberately deferred to M3 alongside the
-// rest of the custom LookAndFeel pass (see docs/design-brief.md §7); they
-// remain fully automation/preset-controllable in the meantime. v0.4.0's two
-// per-band detector-routing choices (`bN_scSource`/`bN_scMode`) DO get
-// controls, because a sidechain routing that cannot be selected from the
-// editor is not usable at all - two combo boxes per column, no layout
-// redesign. A custom vector-drawn GUI
-// (readable control state, gain-reduction needles) is a later milestone
-// (M3, see CLAUDE.md); this is deliberately plain but fully wired and
-// usable.
-class LancetAudioProcessorEditor final : public juce::AudioProcessorEditor
+// Wave-3 photoreal "composited plate" editor (suite rollout 2026-08,
+// DECISIONS.md in the gui-pipeline scaffold): the approved EMPTY master
+// plate render (resources/gui/plate_lancet.png, 2k per DECISIONS.md D5)
+// is the baseline image, and every control is composited on top of it from
+// the suite's control-sprite library at positions declared in
+// resources/gui/layout-manifest.json - param id -> sprite type + centre +
+// size, derived from the plugin's control inventory. This replaces the
+// M3-era fully vector-drawn editor (owner decision 2026-07-15: vector GUIs
+// rejected, photoreal mandatory).
+//
+// Composition layers, bottom to top:
+//   1. the empty plate (paint()) - gold rim, corner filigree, vents,
+//      centre ornament, screws; all baked, zero baked controls.
+//   2. sprite controls (child components): SpriteKnob (static sprite +
+//      rotating feathered inner disc), SpriteToggle (up sprite; mirrored
+//      down state - a documented sprite-library gap workaround), and the
+//      six D2 mini gain-reduction dials as NeedleDial (needle-free face
+//      sprite + live vector needle from the engine's per-band dynamic-gain
+//      telemetry).
+//   3. typography (paint(), src/gui/PlateTypography.h): wordmark, section
+//      lettering, per-control labels and thin engraved column rules, set
+//      live in EB Garamond so they stay tack sharp at every scale step -
+//      text baked into AI master renders never survived the render loop
+//      legibly (suite typography pass, owner decision 2026-07-26).
+//
+// CONTROL SURFACE SCOPE: exactly the rendered inventory of
+// rollout-2026-07/lancet/control-inventory.md - 45 knobs + 32 toggles
+// (incl. the Band 1/6 Type choices in the toggle vocabulary) + 6 per-band
+// D2 mini GR dials, in six band columns between the plate's vent grilles
+// (DECISIONS.md D5). The v0.4.0 wave's 12 per-band sidechain-routing
+// selectors are automation/host-only for this GUI generation, per the
+// same suite precedent as Silentium's own v0.4.0 wave.
+// tests/gui/LayoutManifestTests.cpp pins those counts.
+//
+// GR NUMERAL CONVENTION (DECISIONS.md, suite-wide): the mini dials read
+// 0 -> -20 dB, rest at 0 on the right, needle swings left as reduction
+// increases; the scale is NOT bidirectional - a band's upward (boost)
+// activity shows on its Gain/Range controls, not the dial.
+//
+// FOCUS ORDER CONTRACT (WCAG 2.4.3): children are created in manifest
+// order, which is signal-flow/reading order; JUCE's default traverser
+// follows creation order - do not reorder.
+//
+// RESIZING: stepped window scaling (75/100/150/200%) like the rest of the
+// photoreal family - no free resize with prerendered assets (UA
+// convention; the suite skill file). The chosen scale persists in plugin
+// state under the family's shared "editorScale" root property.
+class LancetAudioProcessorEditor final : public juce::AudioProcessorEditor,
+                                           private juce::Timer
 {
 public:
     explicit LancetAudioProcessorEditor (LancetAudioProcessor& processorToEdit);
     ~LancetAudioProcessorEditor() override;
 
+    void paint (juce::Graphics& g) override;
     void resized() override;
 
+    //==========================================================================
+    // Layout manifest access - tests parse the SAME embedded JSON the
+    // editor builds itself from (tests/gui/LayoutManifestTests.cpp).
+
+    struct SpriteSpec
+    {
+        juce::String binary;
+        float width = 0, height = 0;
+        float knobCx = 0, knobCy = 0, knobRadius = 0;
+        float contentDiameter = 0;
+        float pivotXFrac = 0, pivotYFrac = 0, needleLengthFrac = 0;
+    };
+
+    struct ControlSpec
+    {
+        juce::String id, type, label, tap;
+        float cx = 0, cy = 0, size = 0, sweep = 270;
+        bool leverUpWhenOn = true;
+    };
+
+    struct LabelSpec
+    {
+        juce::String text, style;
+        float cx = 0, cy = 0, h = 0;
+    };
+
+    struct RuleSpec
+    {
+        float x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+    };
+
+    struct Manifest
+    {
+        juce::String plateBinary;
+        int plateWidth1x = 0, plateHeight1x = 0;
+        std::map<juce::String, SpriteSpec> sprites;
+        std::vector<basilica::gui::NeedleDial::Tick> vuTicks;
+        std::vector<basilica::gui::NeedleDial::Tick> grTicks;
+        std::vector<ControlSpec> controls;
+        std::vector<LabelSpec> labels;
+        std::vector<RuleSpec> rules;
+    };
+
+    static Manifest parseLayoutManifest();
+
+    //==========================================================================
+    // Stepped window scale, persisted as a root property of the APVTS
+    // state tree (the family's shared "editorScale" slot; arbitrary stored
+    // values snap to the nearest step).
+
+    static constexpr std::array<float, 4> scaleSteps { 0.75f, 1.0f, 1.5f, 2.0f };
+    static constexpr int defaultScaleStepIndex = 1; // 100%
+
+    static const juce::Identifier& getScaleStatePropertyId() noexcept;
+    static int readPersistedScaleStepIndex (const juce::ValueTree& state) noexcept;
+
+    void applyScaleStep (int newStepIndex);
+    int getScaleStepIndex() const noexcept { return scaleStepIndex; }
+    float getEditorScale() const noexcept { return scaleSteps[(size_t) scaleStepIndex]; }
+
+    int getDesignWidth() const noexcept { return designWidth; }
+    int getDesignHeight() const noexcept { return designHeight; }
+
+    //==========================================================================
+    // Metering seam (headless tests drive the pump directly - no message
+    // loop, no real timer ticks).
+
+    void updateMetersFromProcessor (float dtSeconds);
+
+    bool isMeteringTimerRunning() const noexcept { return isTimerRunning(); }
+    int getMeteringTimerIntervalMs() const noexcept { return getTimerInterval(); }
+
+    static constexpr int meterRefreshHz = 30;
+    static constexpr int topStripHeight1x = 34;
+
 private:
+    void timerCallback() override;
+    void cycleScale();
+    void buildControlsFromManifest();
+    juce::Image imageForBinary (const juce::String& binaryName) const;
+    void drawPlateTypography (juce::Graphics& g, float scale, float plateOriginY) const;
+
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
-    using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
 
-    struct Knob
+    struct KnobControl
     {
-        juce::Slider slider;
-        juce::Label label;
+        ControlSpec spec;
+        std::unique_ptr<basilica::gui::SpriteKnob> slider;
         std::unique_ptr<SliderAttachment> attachment;
     };
 
-    struct Toggle
+    struct ToggleControl
     {
-        juce::ToggleButton button;
+        ControlSpec spec;
+        std::unique_ptr<basilica::gui::SpriteToggle> button;
         std::unique_ptr<ButtonAttachment> attachment;
     };
 
-    // One band's full control set, in signal-flow order.
-    struct BandControls
+    struct MeterControl
     {
-        Toggle on;
-        Toggle listen;
-        juce::ComboBox typeBox; // only used/visible for Band 1 (LowShelf) and Band 6 (HighShelf)
-        std::unique_ptr<ComboBoxAttachment> typeAttachment;
-        bool hasType = false;
-
-        // v0.4.0 (SOTA brief F3/F4): SC Source (Internal/External) and SC
-        // Mode (Split/Wide), appended to the existing band strip in the
-        // current style. juce::AudioProcessorValueTreeState::ComboBoxAttachment
-        // does NOT populate a box's items - it only binds a selection to a
-        // parameter index - so both boxes have their items added explicitly
-        // before the attachment is constructed (see configureBand()).
-        juce::ComboBox scSourceBox;
-        std::unique_ptr<ComboBoxAttachment> scSourceAttachment;
-        juce::ComboBox scModeBox;
-        std::unique_ptr<ComboBoxAttachment> scModeAttachment;
-
-        Knob freq;
-        Knob q;
-        Knob gain;
-        Knob range;
-        Knob threshold;
-        Knob attack;
-        Knob release;
+        ControlSpec spec;
+        std::unique_ptr<basilica::gui::NeedleDial> dial;
     };
-
-    void configureKnob (Knob& knob, const juce::String& parameterId, const juce::String& labelText);
-    void configureToggle (Toggle& toggle, const juce::String& parameterId, const juce::String& labelText);
-    void configureBand (BandControls& band, int bandIndex, const juce::String& shelfLabel);
-    void configureBandLabel (juce::Label& label, const juce::String& text);
 
     LancetAudioProcessor& audioProcessor;
 
-    // M2 preset system (src/presets/PresetBar.h) - a horizontal strip
-    // docked at the top of the editor. Constructed after the localisation
-    // frame is installed (see the constructor) so its TRANS()'d strings
-    // (and any of its own dialogs opened later) pick up the right language
-    // from the very first paint.
+    Manifest manifest;
+    juce::Image plateImage;
+    basilica::gui::PlateTypography typography;
+
     basilica::presets::PresetBar presetBar;
+    juce::TextButton scaleButton;
+    int scaleStepIndex = defaultScaleStepIndex;
 
-    // Top strip: global trim/mix.
-    Knob inTrimKnob;
-    Knob outTrimKnob;
-    Knob mixKnob;
+    std::vector<KnobControl> knobs;
+    std::vector<ToggleControl> toggles;
+    std::vector<MeterControl> meters;
 
-    std::array<juce::Label, LancetEngine::numBands> bandLabels;
-    std::array<BandControls, LancetEngine::numBands> bandControls;
+    int designWidth = 0;
+    int designHeight = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LancetAudioProcessorEditor)
 };

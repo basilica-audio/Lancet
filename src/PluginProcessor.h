@@ -84,6 +84,17 @@ public:
     // already uses.
     basilica::presets::PresetManager presetManager;
 
+    // Per-band gain-reduction telemetry for the wave-3 editor's D2 mini GR
+    // dials: the dynamic (detector-driven) gain band `bandIndex` applied at
+    // the last sample of the most recent block, in dB. Message-thread safe
+    // (relaxed atomic load inside the engine - see
+    // LancetEngine::getLastAppliedDynamicGainDb). The dials clamp positive
+    // (boost) values to 0 themselves, per the suite GR numeral convention.
+    float getBandGainReductionDb (int bandIndex) const noexcept
+    {
+        return engine.getLastAppliedDynamicGainDb (bandIndex);
+    }
+
 private:
     LancetEngine engine;
 
