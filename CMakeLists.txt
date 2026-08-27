@@ -47,6 +47,10 @@ juce_add_plugin(Lancet
     PLUGIN_CODE Lnct
     FORMATS AU VST3 Standalone
     PRODUCT_NAME "Lancet"
+    COMPANY_WEBSITE "https://basilica-audio.github.io/website/"
+    COMPANY_COPYRIGHT "Copyright (c) 2026 Yves Vogl"
+    DESCRIPTION "Six-band dynamic EQ with per-band gain-reduction metering"
+    VST3_CATEGORIES Fx EQ Dynamics
     COPY_PLUGIN_AFTER_BUILD TRUE
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
