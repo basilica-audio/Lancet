@@ -1,6 +1,6 @@
 # Factory presets
 
-Eleven factory presets ship with Lancet v0.4.0, embedded via BinaryData from
+Eleven factory presets ship with Lancet, embedded via BinaryData from
 `presets/factory/*.json` (see `docs/design-brief.md` §5 and
 `docs/voicing-notes.md` for the sourced/measured rationale, and
 `docs/research-notes.md` for the underlying reference-class research). All

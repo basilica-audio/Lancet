@@ -98,7 +98,7 @@ localisation:
 - **Knee width is now derived from Range**, not a flat 6 dB constant -
   shallower Range settings now read as gentler/softer, full-depth (±12 dB)
   Range settings sound identical to v0.1.0's fixed 6 dB knee.
-- **Nine factory presets** (`docs/presets.md`) covering common use cases
+- **Eleven factory presets** (`docs/presets.md`) covering common use cases
   (glue, de-essing, transient enhancement, mix-buss settling, slow tonal
   balancing, resonance taming, and a diagnostic Auto Release demo), plus a
   preset bar (Save/Save As/Delete/Import/Export, factory + user library) at
@@ -295,7 +295,7 @@ through the factory and user library alphabetically, `Save`/`Save As...` to
 write your own, `Delete` for user presets, `Import.../Export...` for single
 `.basilicapreset` files or `.zip` banks, and a menu (click the preset name)
 with a "Set current as default" entry for your own out-of-the-box starting
-point. Eleven factory presets ship with v0.4.0 - see `docs/presets.md` for
+point. Eleven factory presets ship - see `docs/presets.md` for
 what each one does and why. User presets are stored per-user at
 `~/Library/Audio/Presets/Yves Vogl/Lancet/` on macOS
 (`%APPDATA%/Yves Vogl/Lancet/Presets/` on Windows).

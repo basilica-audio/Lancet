@@ -7,14 +7,14 @@
 [![CI](https://github.com/basilica-audio/lancet/actions/workflows/ci.yml/badge.svg)](https://github.com/basilica-audio/lancet/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
-> **Work in progress.** Lancet is pre-1.0 and under active development. Binaries for macOS and Windows are available from the [Releases](../../releases) page (currently unsigned — see the release notes); building from source works too. Expect breaking changes until v1.0.0 ships (see [Roadmap](#roadmap)).
+> **Work in progress.** Lancet is pre-1.0 and under active development. Binaries for macOS and Windows are available from the [Releases](../../releases) page (macOS builds are signed with a Developer ID certificate, notarized and stapled); building from source works too. Expect breaking changes until v1.0.0 ships (see [Roadmap](#roadmap)).
 
 <!-- ==BEGIN BODY== (plugin engineer: replace this block with What it is / Features / Signal flow / Roadmap) -->
 ## What it is
 
 Lancet is a six-band dynamic EQ built on JUCE 8, in the spirit of the Waves F6 class, voiced for heavy mixes. Each band is a normal parametric EQ band (bell, or shelf on Band 1/Band 6) whose gain can also move with the program material: a per-band detector, band-filtered from the plugin's pre-EQ input, drives a soft-knee gain computer that cuts or boosts on top of the band's static setting once the signal crosses its threshold. Because every detector taps the same unperturbed pre-chain signal rather than the evolving, serially-processed audio, one band's move never confuses another band's detection, and a band never triggers itself. See [`docs/manual.md`](docs/manual.md) for the full user manual.
 
-## Features (v0.1.0 scope)
+## Features
 
 - **Six serial bands** (Bell on all six; Band 1 additionally offers a Low Shelf, Band 6 a High Shelf), each with:
   - **Freq** - 20 Hz - 20 kHz, log-skewed
@@ -51,9 +51,16 @@ See [`docs/architecture.md`](docs/architecture.md) for the full breakdown, inclu
 | M4 | Release engineering - signing, notarization, installers, v1.0.0 | Planned |
 <!-- ==END BODY== -->
 
+## Documentation
+
+- [`docs/manual.md`](docs/manual.md) — the user manual: what every control does, and how to use it
+- [`docs/presets.md`](docs/presets.md) — what each factory preset is for
+- [`CHANGELOG.md`](CHANGELOG.md) — what shipped in each release
+- [Lancet on basilica-audio.github.io](https://basilica-audio.github.io/website/lancet/) — the product page (English and German)
+
 ## Installation
 
-No pre-built binaries are published yet (see the work-in-progress notice above). Once releases begin, installation will follow the standard plugin locations:
+Download the archive for your platform from the [Releases](../../releases) page and copy the bundles into the standard plugin locations:
 
 **macOS**
 
