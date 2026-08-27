@@ -129,7 +129,7 @@ namespace
         basilica::presets::PresetManagerConfig config;
         config.pluginId = "com.yvesvogl.lancet";
         config.pluginName = "Lancet";
-        config.manufacturerName = "Yves Vogl";
+        config.manufacturerName = "Basilica Audio";
         config.pluginVersion = "0.2.0-test";
         config.userPresetsDirectoryOverrideForTests = scratchDir;
 

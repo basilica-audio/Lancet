@@ -297,8 +297,8 @@ write your own, `Delete` for user presets, `Import.../Export...` for single
 with a "Set current as default" entry for your own out-of-the-box starting
 point. Eleven factory presets ship - see `docs/presets.md` for
 what each one does and why. User presets are stored per-user at
-`~/Library/Audio/Presets/Yves Vogl/Lancet/` on macOS
-(`%APPDATA%/Yves Vogl/Lancet/Presets/` on Windows).
+`~/Library/Audio/Presets/Basilica Audio/Lancet/` on macOS
+(`%APPDATA%/Basilica Audio/Lancet/Presets/` on Windows).
 
 The editor's frame strings (preset bar labels, menus, dialogs) are
 localised to German automatically when the system language is German;
