@@ -255,7 +255,15 @@ TEST_CASE ("Telemetry: getLastAppliedDynamicGainDb matches the gain reduction me
     const auto measuredGrDb = juce::Decibels::gainToDecibels (dynamicRms / staticRms);
 
     INFO ("telemetry = " << telemetryDb << " dB, spectrally measured = " << measuredGrDb << " dB");
-    CHECK (telemetryDb == Catch::Approx (measuredGrDb).margin (0.5));
+    // Derived skew bound: the telemetry reads the gain at the block's LAST
+    // sample, the spectral figure averages the same gain over the whole
+    // block (RMS). Settled, the two differ by at most the gain ripple band,
+    // which the release droop bounds: with the one-pole release coefficient
+    // exp (-1 / (fs * tau)), tau = 40 ms, the envelope falls
+    // 20*log10(e) * 0.5 ms / 40 ms = 0.11 dB across a rectified-sine
+    // half-period before the 1 ms attack re-charges it. Gain-modulation
+    // sidebands add < 0.01 dB to the RMS. 0.15 covers the sum.
+    CHECK (telemetryDb == Catch::Approx (measuredGrDb).margin (0.15));
     CHECK (telemetryDb < 0.0f); // a cut, with the sign the accessor promises
 }
 

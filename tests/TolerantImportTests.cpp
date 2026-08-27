@@ -161,7 +161,11 @@ TEST_CASE ("Tolerant import: every pre-existing v0.1.0 parameter value is preser
 
     CHECK (getParam (processor, ParamIDs::b6On) == Catch::Approx (1.0f));
     CHECK (getParam (processor, ParamIDs::b6Type) == Catch::Approx (1.0f));
-    CHECK (getParam (processor, ParamIDs::b6Freq) == Catch::Approx (8500.0f).margin (1.0f));
+    // Freq is makeLogRange (20, 20000): the import round-trips the fixture's
+    // exact 8500 through mapFromLog10 -> mapToLog10 in float. Error bound:
+    // V * ln (20000/20) * k * eps_f32 ~ 0.007 * k Hz with k <= 8 ULPs
+    // accumulated across log10f/powf => < 0.06 Hz.
+    CHECK (getParam (processor, ParamIDs::b6Freq) == Catch::Approx (8500.0f).margin (0.1f));
     CHECK (getParam (processor, ParamIDs::b6Gain) == Catch::Approx (1.5f).margin (1.0e-3));
 }
 
@@ -302,7 +306,10 @@ TEST_CASE ("Tolerant import: the checked-in v0.3.0 state fixture loads with ever
     CHECK (realValueOf (processor, ParamIDs::b1Range) == Catch::Approx (-6.0f).margin (1.0e-2));
     CHECK (realValueOf (processor, ParamIDs::b1Threshold) == Catch::Approx (-22.0f).margin (1.0e-2));
     CHECK (realValueOf (processor, ParamIDs::b1Attack) == Catch::Approx (50.0f).margin (0.2f));
-    CHECK (realValueOf (processor, ParamIDs::b1Release) == Catch::Approx (300.0f).margin (1.0f));
+    // Release is makeLogRange (5, 1500); same float log-round-trip bound as
+    // the freq checks: V * ln (1500/5) * 8 * eps_f32 < 0.002 at 300 ms and
+    // < 0.006 at 1000 ms. 0.01 covers both with margin.
+    CHECK (realValueOf (processor, ParamIDs::b1Release) == Catch::Approx (300.0f).margin (0.01f));
 
     // Band 3: the busiest band in the fixture - dynamics, Gain/Q and
     // Saturation all engaged.
@@ -310,7 +317,7 @@ TEST_CASE ("Tolerant import: the checked-in v0.3.0 state fixture loads with ever
     CHECK (realValueOf (processor, ParamIDs::b3Q) == Catch::Approx (3.2f).margin (1.0e-2));
     CHECK (realValueOf (processor, ParamIDs::b3Range) == Catch::Approx (-9.0f).margin (1.0e-2));
     CHECK (realValueOf (processor, ParamIDs::b3Attack) == Catch::Approx (0.5f).margin (1.0e-2));
-    CHECK (realValueOf (processor, ParamIDs::b3Release) == Catch::Approx (1000.0f).margin (5.0f));
+    CHECK (realValueOf (processor, ParamIDs::b3Release) == Catch::Approx (1000.0f).margin (0.01f)); // same bound as b1Release above
     CHECK (realValueOf (processor, ParamIDs::b3GainQ) > 0.5f);
     CHECK (realValueOf (processor, ParamIDs::b3Sat) > 0.5f);
 

@@ -20,6 +20,17 @@ namespace
 
     static constexpr float shelfQ = 0.70710678f;
 
+    // Guarantee #2's own acceptance band (docs/design-brief.md, quoted
+    // above): +-0.5 dB against the analytic RBJ response. The measurement
+    // itself is far better: the TPT SVF's realised transfer function is
+    // algebraically identical to the RBJ biquad (see TptSvf.h), so the
+    // residual is the finite-window RMS estimate - bounded by
+    // fs / (W * 4 * pi * f) in mean-square, worst ~0.07 dB at the 30 Hz
+    // shelf probe - plus float noise. The wider spec band is what these
+    // tests assert because the guarantee is the contract under test, not
+    // the measurement floor.
+    static constexpr double guaranteeBandDb = 0.5;
+
     // Measures the settled steady-state gain (dB) LancetEngine applies to a
     // single-tone probe, with exactly one band on, static (Range == 0), and
     // every trim/mix at unity/neutral.
@@ -90,7 +101,7 @@ TEST_CASE ("Bell band: magnitude at centre frequency matches the analytic RBJ pe
         const auto referenceDb = static_cast<float> (
             TestHelpers::rbjPeakMagnitudeDb (testSampleRate, triple.freqHz, triple.q, triple.gainDb, triple.freqHz));
 
-        CHECK (measuredDb == Catch::Approx (referenceDb).margin (0.5));
+        CHECK (measuredDb == Catch::Approx (referenceDb).margin (guaranteeBandDb));
     }
 }
 
@@ -99,7 +110,7 @@ TEST_CASE ("Band 1 in Bell mode matches the analytic RBJ peaking-EQ response wit
     const auto measuredDb = measureBandGainDb (0, false, 300.0f, 2.0f, 8.0f, 300.0f);
     const auto referenceDb = static_cast<float> (TestHelpers::rbjPeakMagnitudeDb (testSampleRate, 300.0f, 2.0f, 8.0f, 300.0f));
 
-    CHECK (measuredDb == Catch::Approx (referenceDb).margin (0.5));
+    CHECK (measuredDb == Catch::Approx (referenceDb).margin (guaranteeBandDb));
 }
 
 TEST_CASE ("Band 1 LowShelf mode matches the analytic RBJ low-shelf response within +-0.5 dB", "[dsp][static-response]")
@@ -117,7 +128,7 @@ TEST_CASE ("Band 1 LowShelf mode matches the analytic RBJ low-shelf response wit
         const auto referenceDb = static_cast<float> (
             TestHelpers::rbjShelfMagnitudeDb (testSampleRate, cornerHz, shelfQ, gainDb, probeHz, true));
 
-        CHECK (measuredDb == Catch::Approx (referenceDb).margin (0.5));
+        CHECK (measuredDb == Catch::Approx (referenceDb).margin (guaranteeBandDb));
     }
 }
 
@@ -135,7 +146,7 @@ TEST_CASE ("Band 6 HighShelf mode matches the analytic RBJ high-shelf response w
         const auto referenceDb = static_cast<float> (
             TestHelpers::rbjShelfMagnitudeDb (testSampleRate, cornerHz, shelfQ, gainDb, probeHz, false));
 
-        CHECK (measuredDb == Catch::Approx (referenceDb).margin (0.5));
+        CHECK (measuredDb == Catch::Approx (referenceDb).margin (guaranteeBandDb));
     }
 }
 

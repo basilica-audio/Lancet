@@ -81,7 +81,13 @@ TEST_CASE ("Dynamic behaviour: below threshold, band gain stays static (near 0 d
     engine.process (block);
 
     const auto measuredGainDb = measureTailGainDb (reference, processed, static_cast<int> (0.05 * testSampleRate));
-    CHECK (measuredGainDb == Catch::Approx (0.0).margin (1.0));
+
+    // Derived: 10 dB below threshold and outside the 6 dB knee the computed
+    // dynamic gain is exactly 0 dB, and the bell then reduces to
+    // y = x + k * (A^2 - 1) * BP with A = 1, i.e. y == x bit-exactly (see
+    // TptSvf.h). The RMS ratio's only residual is float rounding, orders of
+    // magnitude below 0.01 dB.
+    CHECK (measuredGainDb == Catch::Approx (0.0).margin (0.01));
 }
 
 TEST_CASE ("Dynamic behaviour: level stepped above threshold converges to Range within +-1 dB after 5x release time",
@@ -126,6 +132,12 @@ TEST_CASE ("Dynamic behaviour: level stepped above threshold converges to Range 
     REQUIRE (TestHelpers::allSamplesFinite (aboveProcessed));
 
     const auto measuredGainDb = measureTailGainDb (aboveReference, aboveProcessed, static_cast<int> (0.05 * testSampleRate));
+
+    // +-1 dB is Guarantee #3's own acceptance band (quoted at the top of
+    // this file), not a measurement allowance: at 24 dB of overshoot the
+    // gain demand is clamped hard at Range, and after the held 600 ms
+    // (>= 6x the 100 ms release one-pole) the ballistic residual is
+    // e^-6 * 12 dB ~ 0.03 dB, far inside the band.
     CHECK (measuredGainDb == Catch::Approx (static_cast<double> (rangeDb)).margin (1.0));
 }
 
