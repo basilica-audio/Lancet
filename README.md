@@ -21,10 +21,14 @@ Lancet is a six-band dynamic EQ built on JUCE 8, in the spirit of the Waves F6 c
   - **Q** - 0.3 - 12 (fixed at the standard 0.707 shelf slope in Shelf mode)
   - **Gain** - static gain, -12 to +12 dB
   - **Range** - dynamic depth on top of Gain, -12 to +12 dB (0 = pure static band); negative cuts as the signal gets louder, positive boosts as it gets louder
-  - **Threshold** - detector threshold, -60 to 0 dB, with a 6 dB soft knee
-  - **Attack** / **Release** - 0.5 - 100 ms / 10 - 1000 ms
+  - **Threshold** - detector threshold, -60 to 0 dB, with a 6 dB soft knee; per-band defaults are individually calibrated to -24 dB (-25 dB for Band 2) so every band starts engaging at the same programme loudness under a shared pink-noise reference, rather than one flat value across all six
+  - **Attack** / **Release** - 0.1 - 500 ms / 5 - 1500 ms, with per-band ballistics tuned to each band's typical role (Band 1's boom/resonance control moves slowly, Band 5's sibilance/harshness control moves fast)
   - **Listen** - exclusive sidechain solo of that band's own bandpass-filtered detector signal, for auditioning exactly what triggers it
-- **Per-band detector isolation** - a cascaded (4th-order effective) bandpass matched to each band's own frequency/Q, measured at >20 dB attenuation two octaves from centre at Q=1, so a loud out-of-band tone doesn't falsely trigger a band
+  - **Auto Release** - program-dependent auto-release in place of the fixed Release time, off by default
+  - **Gain/Q** - couples Q to the amount of gain applied, an opt-in analog-style softening character, off by default
+  - **Saturation** - a gentle waveshaper applied only while the band's combined gain is actively boosting (never on a cut or an idle band), off by default
+  - **SC Source** / **SC Mode** - each band's detector can be switched from the pre-chain Internal tap (default) to an External sidechain input, and from the band-matched Split bandpass (default) to a full-range Wide response
+- **Per-band detector isolation** (Split mode, the default) - a cascaded (4th-order effective) bandpass matched to each band's own frequency/Q, measured at >20 dB attenuation two octaves from centre at Q=1, so a loud out-of-band tone doesn't falsely trigger a band; switching a band's SC Mode to Wide bypasses this filtering entirely, following full-range programme level instead
 - **Input Trim** and **Output Trim** - global gain stages before Band 1 and after the Mix blend, -12 to +12 dB
 - **Mix** - parallel dry/wet blend of the whole six-band chain, 0-100%
 - **Zero added latency** - every filter (bands and detectors) is a minimum-phase IIR biquad with no lookahead, so no dry-path delay compensation is needed anywhere in the plugin
